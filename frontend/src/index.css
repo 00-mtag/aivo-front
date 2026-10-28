@@ -1,21 +1,16 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-/* AIVO "Neon Pulse" palette: change a color here and the whole site follows. */
+/* AIVO palette: change a color here and the whole site follows. */
 @theme {
-  --font-display: 'Sora', ui-sans-serif, system-ui, sans-serif;
-  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --color-bg: #0b0b0f;
-  --color-surface: #12121a;
-  --color-card: #15151c;
-  --color-line: #2a2a35;
-  --color-ink: #f4f4f6;
-  --color-mute: #9b9ba8;
-  --color-lime: #c6ff3d;
-  --color-cyan: #3dd9ff;
-  --color-flame: #ff9f1c;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --color-bg: #0a0a0a;
+  --color-card: #1c1c1c;
+  --color-line: #3a3a3a;
+  --color-ink: #ffffff;
+  --color-mute: #a3a3a3;
+  --color-gold: #d4af37;
   --color-danger: #ff5c6c;
-  --color-pink: #ff2d95;
 }
 
 html, body, #root { min-height: 100%; }
@@ -34,15 +29,6 @@ input:-webkit-autofill {
   caret-color: var(--color-ink);
 }
 
-.grid-bg {
-  background-image:
-    linear-gradient(var(--color-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse at 30% 35%, black 15%, transparent 70%);
-  opacity: 0.4;
-}
-
-@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-.rise { animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 @media (prefers-reduced-motion: reduce) { .rise { animation: none; } }

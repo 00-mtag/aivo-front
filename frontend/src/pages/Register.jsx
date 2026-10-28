@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { User, Mail, Phone, Lock } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import TextField from '../components/TextField'
 import PasswordStrength from '../components/PasswordStrength'
@@ -10,7 +9,7 @@ import { errorsFrom, registerRequest, saveSession } from '../lib/api'
 
 export default function Register() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ username: '', email: '', phone: '', password: '' })
+  const [form, setForm] = useState({ username: '', email: '', password: '' })
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
@@ -27,7 +26,7 @@ export default function Register() {
     if (Object.keys(next).length) return
     setBusy(true)
     try {
-      const { data } = await registerRequest({ ...form, username: form.username.trim(), email: form.email.trim(), phone: form.phone.trim() })
+      const { data } = await registerRequest({ ...form, username: form.username.trim(), email: form.email.trim() })
       if (data?.token ?? data?.access_token) { saveSession(data); navigate('/app', { replace: true }) }
       else navigate('/login', { replace: true, state: { registered: true } })
     } catch (err) {
@@ -41,31 +40,32 @@ export default function Register() {
   return (
     <AuthLayout>
       <div className="rise">
-        <h2 className="font-display text-3xl font-bold">Create your account</h2>
-        <p className="mt-1 text-mute">Takes about a minute.</p>
+        <p className="text-sm font-semibold text-gold">Start your journey</p>
+        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Create your account</h2>
+        <p className="mt-1 text-xs text-ink/90">One step closer to your healthiest self.</p>
       </div>
 
-      <form onSubmit={submit} noValidate className="rise mt-8 space-y-5" style={{ animationDelay: '80ms' }}>
-        <TextField label="Username" icon={User} name="username" autoComplete="username" placeholder="Pick a username" value={form.username} onChange={set('username')} error={errors.username} />
-        <TextField label="Email" icon={Mail} type="email" name="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={set('email')} error={errors.email} />
-        <TextField label="Phone, for reminders (optional)" icon={Phone} type="tel" name="phone" autoComplete="tel" placeholder="09xx xxx xxxx" value={form.phone} onChange={set('phone')} error={errors.phone} />
+      <div className="rise mt-6 space-y-5" style={{ animationDelay: '60ms' }}>
+        <GoogleButton onClick={() => setNotice('Google sign-in is not set up yet. Please use email for now.')} />
+        <div className="flex items-center gap-3 text-[11px] font-medium text-ink/90"><span className="h-px flex-1 bg-white/70" />or continue with email<span className="h-px flex-1 bg-white/70" /></div>
+      </div>
+
+      <form onSubmit={submit} noValidate className="rise mt-5 space-y-5" style={{ animationDelay: '120ms' }}>
+        <TextField label="Username" name="username" autoComplete="username" value={form.username} onChange={set('username')} error={errors.username} />
+        <TextField label="Email Address" type="email" name="email" autoComplete="email" value={form.email} onChange={set('email')} error={errors.email} />
         <div className="space-y-2.5">
-          <TextField label="Password" icon={Lock} type="password" name="password" autoComplete="new-password" placeholder="At least 8 characters" value={form.password} onChange={set('password')} error={errors.password} />
+          <TextField label="Password" type="password" name="password" autoComplete="new-password" value={form.password} onChange={set('password')} error={errors.password} />
           <PasswordStrength password={form.password} />
         </div>
 
         {formError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{formError}</p>}
-        {notice && <p role="status" className="rounded-xl border border-lime/30 bg-lime/10 px-4 py-3 text-sm text-lime">{notice}</p>}
+        {notice && <p role="status" className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm text-gold">{notice}</p>}
 
-        <div className="space-y-3 pt-1">
-          <Button type="submit" loading={busy}>Create account</Button>
-          <div className="flex items-center gap-3 text-xs text-mute"><span className="h-px flex-1 bg-line" />or<span className="h-px flex-1 bg-line" /></div>
-          <GoogleButton onClick={() => setNotice('Google sign-in is not set up yet. Please use email for now.')} />
-        </div>
+        <Button type="submit" loading={busy}>Create account</Button>
       </form>
 
-      <p className="rise mt-8 text-center text-sm text-mute" style={{ animationDelay: '160ms' }}>
-        Have an account? <Link to="/login" className="font-semibold text-lime hover:underline">Log in</Link>
+      <p className="mt-6 text-center text-sm">
+        Already have an account? <Link to="/login" className="font-bold text-gold hover:underline">Sign in</Link>
       </p>
     </AuthLayout>
   )

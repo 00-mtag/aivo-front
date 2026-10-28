@@ -15,7 +15,7 @@ api.interceptors.request.use((config) => {
 // Endpoints and field names: confirm them with whoever builds the Laravel side.
 export const loginRequest = ({ email, password }) => api.post('/login', { email, password })
 export const registerRequest = ({ username, email, phone, password }) =>
-  api.post('/register', { username, email, phone, password, password_confirmation: password })
+  api.post('/register', { username, email, ...(phone ? { phone } : {}), password, password_confirmation: password })
 
 export const saveSession = (data) => {
   const token = data?.token ?? data?.access_token

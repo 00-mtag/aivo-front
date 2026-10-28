@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Mail, Lock } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import TextField from '../components/TextField'
 import Button from '../components/Button'
@@ -11,9 +10,10 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const [form, setForm] = useState({ email: '', password: '' })
+  const [remember, setRemember] = useState(false)
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
-  const [notice, setNotice] = useState(location.state?.registered ? 'Account created. Log in to continue.' : '')
+  const [notice, setNotice] = useState(location.state?.registered ? 'Account created. Sign in to continue.' : '')
   const [busy, setBusy] = useState(false)
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
@@ -40,29 +40,36 @@ export default function Login() {
   return (
     <AuthLayout>
       <div className="rise">
-        <h2 className="font-display text-3xl font-bold">Welcome back</h2>
-        <p className="mt-1 text-mute">Log in to keep your streak going.</p>
+        <p className="text-sm font-semibold">Welcome Back</p>
+        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Sign in to <span className="text-gold">AIVO</span></h2>
+        <p className="mt-1 text-xs text-ink/90">Continue building a stronger, healthier you.</p>
       </div>
 
-      <form onSubmit={submit} noValidate className="rise mt-8 space-y-5" style={{ animationDelay: '80ms' }}>
-        <TextField label="Email" icon={Mail} type="email" name="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={set('email')} error={errors.email} />
-        <TextField label="Password" icon={Lock} type="password" name="password" autoComplete="current-password" placeholder="Your password" value={form.password} onChange={set('password')} error={errors.password} />
-        <div className="flex justify-end">
-          <button type="button" onClick={() => setNotice('Password reset is not set up yet.')} className="text-sm font-semibold text-cyan hover:underline">Forgot password?</button>
+      <div className="rise mt-6 space-y-5" style={{ animationDelay: '60ms' }}>
+        <GoogleButton onClick={() => setNotice('Google sign-in is not set up yet. Please use email for now.')} />
+        <div className="flex items-center gap-3 text-[11px] font-medium text-ink/90"><span className="h-px flex-1 bg-white/70" />or continue with email<span className="h-px flex-1 bg-white/70" /></div>
+      </div>
+
+      <form onSubmit={submit} noValidate className="rise mt-5 space-y-5" style={{ animationDelay: '120ms' }}>
+        <TextField label="Email" type="email" name="email" autoComplete="email" value={form.email} onChange={set('email')} error={errors.email} />
+        <TextField label="Password" type="password" name="password" autoComplete="current-password" value={form.password} onChange={set('password')} error={errors.password} />
+
+        <div className="flex items-center justify-between text-xs">
+          <label className="flex cursor-pointer items-center gap-2">
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-3.5 w-3.5 accent-gold" />
+            Remember me
+          </label>
+          <button type="button" onClick={() => setNotice('Password reset is not set up yet.')} className="font-semibold hover:text-gold hover:underline">Forgot Password?</button>
         </div>
 
         {formError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{formError}</p>}
-        {notice && <p role="status" className="rounded-xl border border-lime/30 bg-lime/10 px-4 py-3 text-sm text-lime">{notice}</p>}
+        {notice && <p role="status" className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm text-gold">{notice}</p>}
 
-        <div className="space-y-3 pt-1">
-          <Button type="submit" loading={busy}>Log in</Button>
-          <div className="flex items-center gap-3 text-xs text-mute"><span className="h-px flex-1 bg-line" />or<span className="h-px flex-1 bg-line" /></div>
-          <GoogleButton onClick={() => setNotice('Google sign-in is not set up yet. Please use email for now.')} />
-        </div>
+        <Button type="submit" loading={busy}>Sign in</Button>
       </form>
 
-      <p className="rise mt-8 text-center text-sm text-mute" style={{ animationDelay: '160ms' }}>
-        New here? <Link to="/register" className="font-semibold text-lime hover:underline">Create account</Link>
+      <p className="mt-6 text-center text-sm">
+        New to AIVO? <Link to="/register" className="font-bold text-gold hover:underline">Create an account</Link>
       </p>
     </AuthLayout>
   )
