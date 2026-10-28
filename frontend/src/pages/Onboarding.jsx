@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Activity, ArrowRight, Check } from 'lucide-react'
+import { ArrowRight, Check } from 'lucide-react'
 import WheelPicker from '../components/onboarding/WheelPicker'
+import logo from '../assets/logo.png'
 import { saveProfile } from '../lib/profile'
 
 const GENDERS = ['Male', 'Female', 'Prefer not to say']
@@ -100,7 +101,7 @@ export default function Onboarding() {
     <div className="min-h-screen bg-[#0d0d0d] text-ink">
       <div className="mx-auto max-w-xl px-5 py-6">
         <header className="flex items-center justify-between">
-          <p className="flex items-center gap-2 text-lg font-bold"><Activity size={20} className="text-gold" />AIVO</p>
+          <p className="flex items-center gap-2 text-lg font-bold"><img src={logo} alt="" className="h-7 w-auto" />AIVO</p>
           {step === 1
             ? <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold">Profile setup</span>
             : <span className="text-[11px] tracking-wide text-mute">GETTING STARTED</span>}

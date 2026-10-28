@@ -1,4 +1,5 @@
 import gymBg from '../assets/gym-bg.jpg'
+import logo from '../assets/logo.png'
 
 export default function AuthLayout({ children }) {
   return (
@@ -10,6 +11,7 @@ export default function AuthLayout({ children }) {
       <div className="relative mx-auto grid min-h-screen max-w-7xl items-center gap-10 px-6 py-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:px-12">
         {/* Brand text */}
         <section className="text-center lg:text-left">
+          <img src={logo} alt="" className="mx-auto mb-3 h-14 w-auto lg:mx-0 lg:h-20" />
           <h1 className="text-6xl font-extrabold tracking-tight text-gold sm:text-7xl lg:text-8xl">AIVO</h1>
           <div className="hidden lg:block">
             <p className="mt-12 text-6xl font-bold leading-[1.1] tracking-tight">
