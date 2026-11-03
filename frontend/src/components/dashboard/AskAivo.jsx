@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Send, Sparkles } from 'lucide-react'
+import { ChevronRight, Send, Sparkles, X } from 'lucide-react'
 import { Card } from './Cards'
 
 const SUGGESTIONS = [
@@ -9,7 +9,8 @@ const SUGGESTIONS = [
   'Give me a quick workout (no equipment)',
 ]
 
-export default function AskAivo() {
+export default function AskAivo({ suggestions = SUGGESTIONS, onClose, bare = false }) {
+  const Wrapper = bare ? 'div' : Card
   const [messages, setMessages] = useState([{ from: 'ai', text: 'How can I help you today?' }])
   const [text, setText] = useState('')
   const endRef = useRef(null)
@@ -24,10 +25,11 @@ export default function AskAivo() {
   }
 
   return (
-    <Card className="flex h-full min-h-[34rem] flex-col p-5">
+    <Wrapper className={bare ? 'flex h-full flex-col p-5' : 'flex h-full min-h-[34rem] flex-col p-5'}>
       <div className="flex items-center gap-3">
         <span className="grid h-10 w-10 place-items-center rounded-xl border border-white/15 text-gold"><Sparkles size={20} /></span>
         <div><p className="text-sm font-bold">Ask AIVO</p><p className="text-[11px] text-mute">Your AI fitness &amp; nutrition coach</p></div>
+        {onClose && <button type="button" aria-label="Close" onClick={onClose} className="ml-auto text-mute transition hover:text-ink"><X size={20} /></button>}
       </div>
 
       <div className="mt-5 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -36,7 +38,7 @@ export default function AskAivo() {
         ))}
         {messages.length === 1 && (
           <div className="space-y-2 pt-3">
-            {SUGGESTIONS.map((s) => (
+            {suggestions.map((s) => (
               <button key={s} type="button" onClick={() => send(s)} className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-left text-xs transition hover:border-gold/60">
                 {s}<ChevronRight size={14} className="text-mute" />
               </button>
@@ -50,6 +52,6 @@ export default function AskAivo() {
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type your question..." className="w-full bg-transparent text-xs outline-none placeholder:text-mute" />
         <button type="submit" aria-label="Send" className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gold text-black"><Send size={14} /></button>
       </form>
-    </Card>
+    </Wrapper>
   )
 }

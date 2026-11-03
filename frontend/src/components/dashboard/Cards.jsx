@@ -1,157 +1,89 @@
-import { Activity, Calendar, ChevronRight, Clock, Droplet, Dumbbell, Flame, Footprints, Sparkles, Zap, Check } from 'lucide-react'
-import gymImg from '../../assets/gym-bg.jpg'
-
-const today = () => new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+import { Activity, Droplet, Dumbbell, Flame, Zap } from 'lucide-react'
+import { BMI_SEGMENTS, bmiInfo } from '../../lib/recommend'
 
 export function Card({ className = '', children }) {
   return <section className={`rounded-xl border border-white/10 bg-card p-4 ${className}`}>{children}</section>
 }
 
-const IconBox = ({ icon: Icon }) => (
+export const IconBox = ({ icon: Icon }) => (
   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/15 text-gold"><Icon size={16} /></span>
 )
 
-/* ---------- BMI ---------- */
-const bmiOf = (kg, m) => kg / (m * m)
-const SEGMENTS = [
-  { w: 17.5, color: '#3b82f6' }, { w: 32.5, color: '#22c55e' }, { w: 25, color: '#eab308' }, { w: 25, color: '#ef4444' },
-]
+/* ---------- BMI: number and pill take the color of the user's category ---------- */
 export function BmiCard({ weightKg = 70, heightM = 1.73 }) {
-  const bmi = bmiOf(weightKg, heightM)
-  const cat = bmi < 18.5 ? 'Underweight' : bmi < 25 ? 'Normal' : bmi < 30 ? 'Overweight' : 'Obese'
-  const left = Math.min(100, Math.max(0, ((bmi - 15) / 20) * 100))
+  const { bmi, category, color, message } = bmiInfo(weightKg, heightM)
+  const idx = BMI_SEGMENTS.findIndex((s) => s.label === category)
+  const seg = BMI_SEGMENTS[idx]
+  const frac = Math.min(1, Math.max(0, (bmi - seg.lo) / (seg.hi - seg.lo)))
+  const pos = Math.min(97, Math.max(3, (idx + frac) * 25))
+  const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+
   return (
-    <Card>
-      <div className="flex items-center gap-3">
-        <IconBox icon={Activity} />
-        <div className="flex-1"><p className="text-sm font-semibold">BMI Card</p><p className="text-[10px] text-mute">Body Mass Index</p></div>
-        <span className="text-[10px] text-mute">{today()}</span>
+    <section className="rounded-2xl border-2 border-gold bg-[#101010] p-5">
+      <div className="flex items-start justify-between gap-2">
+        <div><h3 className="text-lg font-bold leading-tight">Your BMI</h3><p className="text-xs text-mute">Body Mass Index</p></div>
+        <p className="text-xs font-bold">{date}</p>
       </div>
-      <div className="mt-4 flex items-center gap-3">
-        <p className="text-4xl font-bold">{bmi.toFixed(1)}</p>
-        <span className="rounded-full bg-green-600 px-3 py-0.5 text-xs font-semibold">{cat}</span>
+      <p className="mt-3 text-center text-7xl font-extrabold leading-none tracking-tight" style={{ color }}>{bmi.toFixed(1)}</p>
+      <p className="mt-4 text-center text-sm">{message}</p>
+
+      <div className="relative mt-5">
+        <div className="grid grid-cols-4 gap-1">
+          {BMI_SEGMENTS.map((s) => <span key={s.label} className="h-1.5 rounded-full" style={{ background: s.color }} />)}
+        </div>
+        <span className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] bg-[#d9d9d9]" style={{ left: `${pos}%`, borderColor: color }} />
       </div>
-      <p className="mt-1 text-[11px] text-mute">{cat === 'Normal' ? 'Your BMI is within the healthy range.' : 'Your BMI is outside the healthy range.'}</p>
-      <div className="relative mt-4 flex h-1.5 overflow-hidden rounded-full">
-        {SEGMENTS.map((s, i) => <div key={i} style={{ width: `${s.w}%`, background: s.color }} />)}
-        <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-black bg-white" style={{ left: `${left}%` }} />
-      </div>
-      <div className="mt-2 flex text-[10px] text-mute">
-        {[['< 18.5', 'Underweight'], ['18.5 – 24.9', 'Normal'], ['25 – 29.9', 'Overweight'], ['> 30', 'Obese']].map(([r, l]) => (
-          <div key={l} className="flex-1 text-center leading-tight"><p>{r}</p><p>{l}</p></div>
+      <div className="mt-2 grid grid-cols-4 gap-1 text-center">
+        {BMI_SEGMENTS.map((s) => (
+          <div key={s.label} className="leading-tight"><p className="text-[10px]">{s.range}</p><p className="text-[10px] font-bold" style={{ color: s.color }}>{s.label}</p></div>
         ))}
       </div>
-    </Card>
+    </section>
   )
 }
 
-/* ---------- Today's summary ---------- */
-function Tile({ icon: Icon, iconClass = 'text-gold', label, children }) {
+/* ---------- Summary of the user's condition, built from the onboarding answers ---------- */
+function Tile({ icon: Icon, label, value, valueColor, sub }) {
   return (
     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-      <Icon size={20} className={iconClass} />
+      <Icon size={18} className="text-gold" />
       <p className="mt-2 text-[10px] text-mute">{label}</p>
-      {children}
+      <p className="text-base font-bold leading-tight" style={valueColor ? { color: valueColor } : undefined}>{value}</p>
+      <p className="mt-1 text-[10px] leading-snug text-mute">{sub}</p>
     </div>
   )
 }
-const Bar = ({ pct, color }) => (
-  <div className="mt-2 h-1.5 rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
-)
-export function FitnessSummary({ calories = 428, steps = 7842, stepGoal = 10000, water = 1.8, waterGoal = 2.5 }) {
+
+export function FitnessSummary({ rec, focus }) {
+  const chips = [rec.goal, rec.level, `${rec.age} yrs`, `${rec.weightKg} kg`, `${rec.heightCm} cm`]
   return (
     <Card>
       <div className="flex items-center gap-3">
         <IconBox icon={Zap} />
-        <p className="flex-1 text-sm font-semibold">Today's Fitness Summary</p>
-        <span className="text-[10px] text-mute">{today()}</span>
+        <p className="flex-1 text-sm font-semibold">Your Fitness Summary</p>
+        <span className="text-[10px] text-mute">{new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}</span>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Tile icon={Dumbbell} label="Today's Workout">
-          <p className="text-sm font-semibold leading-tight">Upper Body Strength</p>
-          <p className="mt-2 flex items-center gap-1 text-[10px] text-mute"><Clock size={11} />45 min</p>
-        </Tile>
-        <Tile icon={Flame} label="Calories Burned">
-          <p className="text-xl font-bold">{calories} <span className="text-xs font-medium">kcal</span></p>
-          <p className="mt-2 text-[10px] text-green-400">↑ +12% vs. yesterday</p>
-        </Tile>
-        <Tile icon={Footprints} label="Steps">
-          <p className="text-xl font-bold">{steps.toLocaleString()}</p>
-          <p className="text-[10px] text-mute">/ {stepGoal.toLocaleString()}</p>
-          <Bar pct={(steps / stepGoal) * 100} color="#d4af37" />
-        </Tile>
-        <Tile icon={Droplet} iconClass="text-sky-400" label="Water Intake">
-          <p className="text-xl font-bold">{water} <span className="text-xs font-medium">L</span></p>
-          <p className="text-[10px] text-mute">/ {waterGoal} L</p>
-          <Bar pct={(water / waterGoal) * 100} color="#38bdf8" />
-        </Tile>
-      </div>
-    </Card>
-  )
-}
 
-/* ---------- AI suggestion ---------- */
-export function AiSuggestion({ goal, level = 'Intermediate' }) {
-  return (
-    <Card className="border-gold/60">
-      <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-        <IconBox icon={Sparkles} />
-        <p className="flex-1 text-sm font-semibold">AI Suggestion</p>
-        <span className="hidden text-[10px] text-mute sm:block">Based on your goals and recent activity</span>
+      <div className="mt-3 rounded-lg border border-gold/50 bg-gold/10 p-3">
+        <p className="text-[10px] font-semibold tracking-wide text-gold">TODAY</p>
+        <p className="text-sm font-semibold">{focus.title}</p>
+        <p className="text-[11px] text-ink/80">{focus.sub}</p>
       </div>
-      <div className="mt-4 flex gap-4">
-        <img src={gymImg} alt="" className="h-32 w-28 shrink-0 rounded-lg object-cover" />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold">Full Body Strength + Core</p>
-          <span className="mt-1 inline-block rounded-md bg-white/10 px-2 py-0.5 text-[10px]">{goal ?? 'Workout'}</span>
-          <p className="mt-2 text-[11px] leading-snug text-mute">A balanced session to build strength, improve endurance, and activate your core. Perfect for maintaining progress and boosting energy levels.</p>
-        </div>
-      </div>
-      <div className="mt-3 flex items-center gap-4 text-[11px] text-mute">
-        <span className="flex items-center gap-1"><Clock size={12} />45 min</span>
-        <span className="flex items-center gap-1"><Dumbbell size={12} className="text-gold" />{level}</span>
-        <span className="flex items-center gap-1"><Flame size={12} className="text-orange-400" />~ 420 kcal</span>
-      </div>
-      <button type="button" className="mt-4 flex items-center gap-2 rounded-full bg-gold px-6 py-2.5 text-sm font-bold text-black transition hover:brightness-110">
-        View plan <ChevronRight size={16} />
-      </button>
-    </Card>
-  )
-}
 
-/* ---------- Weekly calendar ---------- */
-const WEEK = [
-  { day: 'Mon', date: 'Oct 27', title: 'Upper Body Strength', meta: '45 min • Gym', done: true },
-  { day: 'Tue', date: 'Oct 28', title: 'HIIT Cardio', meta: '30 min • Gym' },
-  { day: 'Wed', date: 'Oct 29', title: 'Active Recovery', meta: '20 min • Home' },
-  { day: 'Thu', date: 'Oct 30', title: 'Lower Body Strength', meta: '45 min • Gym' },
-  { day: 'Fri', date: 'Oct 31', title: 'Mobility & Flexibility', meta: '30 min • Home' },
-  { day: 'Sat', date: 'Nov 1', title: 'Rest Day', rest: true },
-  { day: 'Sun', date: 'Nov 2', title: 'Full Body (Optional)', meta: '45 min • Gym' },
-]
-export function WeeklyCalendar() {
-  return (
-    <Card>
-      <div className="flex items-center gap-3">
-        <Calendar size={18} className="text-gold" />
-        <p className="flex-1 text-sm font-semibold">Weekly Fitness Calendar</p>
-        <button type="button" className="flex items-center gap-0.5 text-[11px] text-gold hover:underline">View all <ChevronRight size={12} /></button>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {chips.map((c) => <span key={c} className="rounded-full bg-white/10 px-2.5 py-1 text-[10px]">{c}</span>)}
       </div>
-      <ul className="mt-3 divide-y divide-white/10 rounded-lg border border-white/10">
-        {WEEK.map((d) => (
-          <li key={d.day} className="flex items-center gap-3 px-3 py-2">
-            <span className="w-8 text-xs font-bold">{d.day}</span>
-            <span className="w-12 text-[10px] text-mute">{d.date}</span>
-            <span className="min-w-0 flex-1 leading-tight">
-              <span className={`block truncate text-[11px] font-medium ${d.rest ? 'text-ink' : 'text-gold'}`}>{d.title}</span>
-              <span className="block text-[10px] text-mute">{d.meta ?? '—'}</span>
-            </span>
-            <span className={`grid h-4 w-4 place-items-center rounded-full border ${d.done ? 'border-green-500 bg-green-500 text-black' : 'border-white/40'}`}>
-              {d.done && <Check size={11} strokeWidth={3} />}
-            </span>
-          </li>
-        ))}
-      </ul>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Tile icon={Activity} label="Condition" value={rec.category} valueColor={rec.color} sub={rec.condition} />
+        <Tile icon={Flame} label="Daily calories" value={`${rec.calories.toLocaleString()} kcal`} sub={`Aim for about ${rec.protein} g of protein`} />
+        <Tile icon={Dumbbell} label="Weekly workouts" value={`${rec.perWeek} days`} sub={`${rec.workout.minutes} min each, ${rec.level.toLowerCase()} level`} />
+        <Tile icon={Droplet} label="Water" value={`${rec.waterL} L / day`} sub="Spread through the day" />
+      </div>
+
+      <p className="mt-3 text-[11px] text-ink/90"><span className="font-semibold text-gold">Your focus:</span> {rec.focus}</p>
+      {rec.note && <p className="mt-2 rounded-lg border border-white/10 bg-black/20 p-2.5 text-[11px] text-ink/90">{rec.note}</p>}
+      <p className="mt-3 text-[10px] text-mute">Estimates based on your answers. Not medical advice.</p>
     </Card>
   )
 }

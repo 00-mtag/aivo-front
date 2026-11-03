@@ -2,9 +2,13 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, User } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
 import AskAivo from '../components/dashboard/AskAivo'
-import { AiSuggestion, BmiCard, FitnessSummary, WeeklyCalendar } from '../components/dashboard/Cards'
+import { BmiCard, FitnessSummary } from '../components/dashboard/Cards'
+import Suggestions from '../components/dashboard/Suggestions'
+import WeekCalendar from '../components/dashboard/WeekCalendar'
 import { clearSession } from '../lib/api'
 import { getProfile } from '../lib/profile'
+import { recommend, todayFocus } from '../lib/recommend'
+import { loadPlans } from '../lib/workouts'
 
 function userName() {
   try {
@@ -15,7 +19,8 @@ function userName() {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const p = getProfile() ?? {}
+  const rec = recommend(getProfile())
+  const focus = todayFocus(loadPlans(), rec)
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
   const logout = () => { clearSession(); navigate('/login', { replace: true }) }
@@ -36,11 +41,16 @@ export default function Dashboard() {
         </header>
 
         <div className="mt-8 grid gap-5 xl:grid-cols-[1fr_21rem]">
-          <div className="grid content-start gap-5 md:grid-cols-[1fr_1.35fr]">
-            <BmiCard weightKg={p.weightKg} heightM={p.heightCm ? p.heightCm / 100 : undefined} />
-            <FitnessSummary />
-            <AiSuggestion goal={p.goal} level={p.experience} />
-            <WeeklyCalendar />
+          <div className="grid gap-5 md:grid-cols-[1fr_1.35fr] md:items-start">
+            {/* Two stacked columns on wide screens so no card is stretched to match its neighbour. On phones the order is BMI, summary, suggestions, calendar. */}
+            <div className="contents md:block md:space-y-5">
+              <div className="order-1"><BmiCard weightKg={rec.weightKg} heightM={rec.heightCm / 100} /></div>
+              <div className="order-3"><Suggestions rec={rec} /></div>
+            </div>
+            <div className="contents md:block md:space-y-5">
+              <div className="order-2"><FitnessSummary rec={rec} focus={focus} /></div>
+              <div className="order-4"><WeekCalendar /></div>
+            </div>
           </div>
           <AskAivo />
         </div>
