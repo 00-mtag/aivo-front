@@ -16,7 +16,7 @@ export default function Sidebar() {
       <nav className="contents lg:flex lg:flex-col lg:items-center lg:gap-8">
         <NavLink to={root} end aria-label="Home" title="Home" className={link}><Home size={26} /></NavLink>
         <NavLink to={`${root}/workouts`} aria-label="Workouts" title="Workouts" className={link}><Dumbbell size={26} /></NavLink>
-        <button type="button" aria-label="Nutrition (coming soon)" title="Nutrition: coming soon" className={soon}><UtensilsCrossed size={26} /></button>
+        <NavLink to={`${root}/nutrition`} aria-label="Meal plan" title="Meal plan" className={link}><UtensilsCrossed size={26} /></NavLink>
         <button type="button" aria-label="AI Coach (coming soon)" title="AI Coach: coming soon" className={soon}><Bot size={26} /></button>
       </nav>
       <button type="button" aria-label="Settings (coming soon)" title="Settings: coming soon" className={soon}><Settings size={26} /></button>

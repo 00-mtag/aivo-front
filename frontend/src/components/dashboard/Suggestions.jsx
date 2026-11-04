@@ -3,6 +3,7 @@ import { Clock, Dumbbell, Flame, Target, UtensilsCrossed } from 'lucide-react'
 import { Card, IconBox } from './Cards'
 import { buildPlanFromRec } from '../../lib/recommend'
 import { loadPlans, savePlans } from '../../lib/workouts'
+import { dayTotals, loadNutrition, toYmd } from '../../lib/nutrition'
 
 export default function Suggestions({ rec }) {
   const navigate = useNavigate()
@@ -13,6 +14,9 @@ export default function Suggestions({ rec }) {
     if (!added) savePlans([buildPlanFromRec(rec), ...loadPlans()])
     navigate(`${root}/workouts`)
   }
+  const nutrition = loadNutrition(rec)
+  const eaten = dayTotals(nutrition.meals, toYmd(new Date()))
+  const planned = nutrition.meals.some((m) => m.items.length)
   const shown = rec.workout.exercises.slice(0, 5)
 
   return (
@@ -45,11 +49,15 @@ export default function Suggestions({ rec }) {
       </div>
 
       <div className="mt-5 rounded-lg border border-white/10 bg-black/20 p-3">
-        <div className="flex items-center justify-between">
-          <p className="flex items-center gap-2 text-sm font-semibold"><UtensilsCrossed size={15} className="text-gold" /> Meal plan</p>
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px]">Coming soon</span>
-        </div>
-        <p className="mt-2 text-[11px] leading-snug text-mute">Your target is about {rec.calories.toLocaleString()} kcal a day with {rec.protein} g of protein. Meals built around this are on the way.</p>
+        <p className="flex items-center gap-2 text-sm font-semibold"><UtensilsCrossed size={15} className="text-gold" /> Meal plan</p>
+        <p className="mt-2 text-[11px] leading-snug text-mute">
+          {planned
+            ? `Today: ${Math.round(eaten.calories).toLocaleString()} of ${Math.round(nutrition.goal.daily_calories).toLocaleString()} kcal planned.`
+            : `Your target is about ${nutrition.goal.daily_calories.toLocaleString()} kcal a day with ${nutrition.goal.daily_protein} g of protein. Build your meals for the week.`}
+        </p>
+        <button type="button" onClick={() => navigate(`${root}/nutrition`)} className="mt-3 w-full rounded-full border border-gold/60 px-5 py-2 text-xs font-bold text-gold transition hover:bg-gold/10">
+          {planned ? 'Open meal plan' : 'Create meal plan'}
+        </button>
       </div>
     </Card>
   )

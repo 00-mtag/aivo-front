@@ -4,6 +4,7 @@ import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Onboarding from './pages/Onboarding'
 import Workouts from './pages/Workouts'
+import Nutrition from './pages/Nutrition'
 import { isLoggedIn } from './lib/api'
 import { hasProfile } from './lib/profile'
 
@@ -26,9 +27,11 @@ export default function App() {
       <Route path="/onboarding" element={<Onboard><Onboarding /></Onboard>} />
       <Route path="/app" element={<Protected><Dashboard /></Protected>} />
       <Route path="/app/workouts" element={<Protected><Workouts /></Protected>} />
+      <Route path="/app/nutrition" element={<Protected><Nutrition /></Protected>} />
       {/* Dev-only previews: no login needed. Not included in production builds. */}
       {import.meta.env.DEV && <Route path="/preview" element={<Dashboard />} />}
       {import.meta.env.DEV && <Route path="/preview/workouts" element={<Workouts />} />}
+      {import.meta.env.DEV && <Route path="/preview/nutrition" element={<Nutrition />} />}
       {import.meta.env.DEV && <Route path="/preview/onboarding" element={<Onboarding />} />}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
