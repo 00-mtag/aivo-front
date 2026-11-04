@@ -19,7 +19,18 @@ export function loadPlans() {
   return []
 }
 export const savePlans = (plans) => localStorage.setItem(userKey('aivo_workouts'), JSON.stringify(plans))
-export const newPlan = ({ name, goal, level, minutes }) => ({ id: uid(), name: name.trim(), goal, level, minutes: Number(minutes), schedule: emptyWeek() })
+export const newPlan = ({ name, description = '', goal, level, minutes, weeks = 4 }) => ({
+  id: uid(), name: name.trim(), description: description.trim(), goal, level, minutes: Number(minutes), weeks: Number(weeks) || 4, active: true, schedule: emptyWeek(),
+})
+const GOAL_TEXT = {
+  'Lose weight': 'Burn calories and lose fat with a steady routine.',
+  'Build muscle': 'Build muscle and gain strength with a balanced routine.',
+  'Improve endurance': 'Improve endurance and stamina over time.',
+  'Maintain fitness': 'Stay active and keep your fitness steady.',
+}
+export const planDescription = (plan) => plan.description || GOAL_TEXT[plan.goal] || ''
+export const planWeeks = (plan) => plan.weeks ?? 4
+export const isActive = (plan) => plan.active !== false
 export const dayCount = (plan) => DAYS.filter((d) => plan.schedule[d]?.length).length
 export const exerciseCount = (plan) => DAYS.reduce((n, d) => n + (plan.schedule[d]?.length ?? 0), 0)
 
