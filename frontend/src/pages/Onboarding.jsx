@@ -3,11 +3,23 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Check } from 'lucide-react'
 import WheelPicker from '../components/onboarding/WheelPicker'
 import logo from '../assets/logo.png'
+import { api, errorsFrom } from '../lib/api'
 import { saveProfile } from '../lib/profile'
 
 const GENDERS = ['Male', 'Female', 'Prefer not to say']
 const GOALS = ['Lose weight', 'Build muscle', 'Improve endurance', 'Maintain fitness']
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
+const ALLERGIES = ['Milk', 'Eggs', 'Peanuts', 'Tree nuts', 'Fish', 'Shellfish', 'Wheat', 'Soybeans', 'Sesame']
+const HEALTH_CONDITIONS = [
+  'High Blood Pressure (Hypertension)',
+  'Poor Heart Blood Flow (Coronary Artery Disease)',
+  'Irregular Heartbeat (Arrhythmia)',
+  'Diabetes / Pre-Diabetes',
+  'Low Iron (Anemia)',
+  'Overactive Thyroid',
+  'Chronic Asthma',
+  'Joint Wear & Tear (Arthritis)',
+]
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 const THIS_YEAR = new Date().getFullYear()
@@ -17,9 +29,11 @@ const CMS = Array.from({ length: 151 }, (_, i) => 100 + i)       // 100 to 250 c
 const KGS = Array.from({ length: 331 }, (_, i) => 20 + i)        // 20 to 350 kg
 const LBS = Array.from({ length: 729 }, (_, i) => 44 + i)        // 44 to 772 lb
 const LB_PER_KG = 2.20462
+const ACTIVITY_LEVELS = ['Sedentary', 'Lightly active', 'Moderately active', 'Very active']
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
 const pad = (n) => String(n).padStart(2, '0')
 const fmtIn = (n) => `${Math.floor(n / 12)} ft ${n % 12} in`
+const inputClass = 'w-full rounded-xl border border-white/10 bg-card px-4 py-3 text-sm text-ink outline-none transition focus:border-gold'
 
 function Option({ selected, onClick, children }) {
   return (
@@ -30,6 +44,28 @@ function Option({ selected, onClick, children }) {
         : <span className="h-4 w-4 rounded-full bg-mute/80" />}
       {children}
     </button>
+  )
+}
+
+function MultiChoice({ label, options, selected, onToggle, otherSelected, onToggleOther, otherValue, onOtherChange }) {
+  const choiceClass = (active) => `rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition ${active ? 'border-gold bg-gold/15 text-ink' : 'border-white/10 bg-card text-mute hover:border-white/30 hover:text-ink'}`
+
+  return (
+    <fieldset>
+      <legend className="mb-2 text-sm font-semibold">{label} <span className="font-normal text-mute">(optional, select all that apply)</span></legend>
+      <div className="grid grid-cols-2 gap-2">
+        {options.map((option) => (
+          <button key={option} type="button" aria-pressed={selected.includes(option)} onClick={() => onToggle(option)}
+            className={choiceClass(selected.includes(option))}>{option}</button>
+        ))}
+        <button type="button" aria-pressed={otherSelected} onClick={onToggleOther} className={choiceClass(otherSelected)}>Others</button>
+      </div>
+      {otherSelected && (
+        <input value={otherValue} onChange={(event) => onOtherChange(event.target.value)} maxLength={255}
+          aria-label={`Other ${label.toLowerCase()}`} placeholder={`Enter other ${label.toLowerCase()}`}
+          className={`${inputClass} mt-2`} />
+      )}
+    </fieldset>
   )
 }
 
@@ -63,6 +99,20 @@ export default function Onboarding() {
   const [weightUnit, setWeightUnit] = useState('kg')
   const [goal, setGoal] = useState('')
   const [level, setLevel] = useState('Beginner')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [activityLevel, setActivityLevel] = useState('')
+  const [targetWeightKg, setTargetWeightKg] = useState('')
+  const [allergies, setAllergies] = useState([])
+  const [otherAllergy, setOtherAllergy] = useState('')
+  const [allergyOtherSelected, setAllergyOtherSelected] = useState(false)
+  const [healthConditions, setHealthConditions] = useState([])
+  const [otherCondition, setOtherCondition] = useState('')
+  const [conditionOtherSelected, setConditionOtherSelected] = useState(false)
+  const [dietaryPreferences, setDietaryPreferences] = useState('')
+  const [profilePicture, setProfilePicture] = useState(null)
+  const [pictureError, setPictureError] = useState('')
+  const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const daysInMonth = new Date(birth.y, birth.m + 1, 0).getDate()
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
@@ -84,18 +134,76 @@ export default function Onboarding() {
     setWeightKg(kg ? 20 + c : (44 + c) / LB_PER_KG)
   }
   const bmi = weightKg / (heightCm / 100) ** 2
+  const toggleSelection = (setter) => (value) => setter((current) =>
+    current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
+  )
 
-  const finish = () => {
-    saveProfile({
-      gender, goal, experience: level,
-      birthDate: `${birth.y}-${pad(birth.m + 1)}-${pad(birth.d)}`,
-      heightCm, weightKg: Math.round(weightKg * 10) / 10,
+  const birthDate = `${birth.y}-${pad(birth.m + 1)}-${pad(birth.d)}`
+  const finish = async () => {
+    setSaving(true)
+    setSaveError('')
+    const age = new Date().getFullYear() - birth.y
+      - (new Date() < new Date(birth.y, birth.m, birth.d) ? 1 : 0)
+    const profile = {
+      gender,
+      goal,
+      experience: level,
+      birthDate,
+      heightCm,
+      weightKg: Math.round(weightKg * 10) / 10,
+      phoneNumber: phoneNumber.trim(),
+      activityLevel,
+      targetWeightKg: targetWeightKg === '' ? null : Math.round(Number(targetWeightKg) * 10) / 10,
+      allergies: [...allergies, ...(allergyOtherSelected && otherAllergy.trim() ? [otherAllergy.trim()] : [])],
+      healthConditions: [...healthConditions, ...(conditionOtherSelected && otherCondition.trim() ? [otherCondition.trim()] : [])],
+      dietaryPreferences: dietaryPreferences.trim(),
       completedAt: new Date().toISOString(),
-    })
-    navigate('/app', { replace: true })
+    }
+    const form = new FormData()
+    Object.entries({
+      age,
+      gender,
+      phone_number: profile.phoneNumber,
+      birth_date: birthDate,
+      height: heightCm,
+      weight: profile.weightKg,
+      activity_level: activityLevel,
+      fitness_goal: goal,
+      experience_level: level,
+      target_weight: profile.targetWeightKg ?? '',
+      dietary_preferences: profile.dietaryPreferences,
+    }).forEach(([key, value]) => form.append(key, String(value)))
+    form.append('allergies_present', '1')
+    form.append('health_conditions_present', '1')
+    profile.allergies.forEach((value) => form.append('allergies[]', value))
+    profile.healthConditions.forEach((value) => form.append('health_conditions[]', value))
+    if (profilePicture) form.append('profile_picture', profilePicture)
+    form.append('_method', 'PUT')
+
+    try {
+      await api.post('/profile', form)
+      saveProfile(profile)
+      navigate('/app', { replace: true })
+    } catch (error) {
+      const { fields, form: message } = errorsFrom(error)
+      setSaveError(Object.values(fields)[0] || message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const colLabel = 'mb-1.5 text-center text-[10px] tracking-wider text-mute'
+  const setPicture = (event) => {
+    const file = event.target.files?.[0] ?? null
+    setPictureError('')
+    if (file && (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
+      setPictureError('Choose a JPG, PNG, or WebP image up to 5 MB.')
+      event.target.value = ''
+      setProfilePicture(null)
+      return
+    }
+    setProfilePicture(file)
+  }
 
   return (
     <div className="min-h-screen bg-[#0d0d0d] text-ink">
@@ -108,9 +216,9 @@ export default function Onboarding() {
         </header>
 
         <div className="mt-4 flex gap-1.5" aria-hidden="true">
-          {[0, 1, 2].map((i) => <span key={i} className={`h-1 flex-1 rounded-full transition-colors ${i <= step ? 'bg-gold' : 'bg-white/15'}`} />)}
+          {[0, 1, 2, 3].map((i) => <span key={i} className={`h-1 flex-1 rounded-full transition-colors ${i <= step ? 'bg-gold' : 'bg-white/15'}`} />)}
         </div>
-        <p className="mt-3 text-[10px] font-semibold tracking-wide text-gold">STEP {step + 1} OF 3</p>
+        <p className="mt-3 text-[10px] font-semibold tracking-wide text-gold">STEP {step + 1} OF 4</p>
 
         {step === 0 && (
           <section>
@@ -186,7 +294,63 @@ export default function Onboarding() {
                   className={`rounded-xl border py-3 text-xs font-semibold transition ${level === l ? 'border-gold bg-gold/15' : 'border-white/10 bg-card hover:border-white/30'}`}>{l}</button>
               ))}
             </div>
-            <Nav onBack={() => setStep(1)} onNext={finish} nextLabel="Finish setup" disabled={!goal} last />
+            <label className="mt-6 block space-y-1.5 text-sm font-semibold">
+              Activity level
+              <select value={activityLevel} onChange={(e) => setActivityLevel(e.target.value)} className={inputClass}>
+                <option value="">Select your typical activity</option>
+                {ACTIVITY_LEVELS.map((item) => <option key={item} value={item} className="bg-card">{item}</option>)}
+              </select>
+            </label>
+            <Nav onBack={() => setStep(1)} onNext={() => setStep(3)} disabled={!goal} />
+          </section>
+        )}
+
+        {step === 3 && (
+          <section>
+            <h1 className="mt-3 text-3xl font-bold">A few more details.</h1>
+            <p className="mt-3 text-sm text-ink/80">These optional details help personalize your profile and recommendations. Your address is not collected.</p>
+
+            <div className="mt-5 space-y-4">
+              <label className="block space-y-1.5 text-sm font-semibold">
+                Phone number <span className="font-normal text-mute">(optional)</span>
+                <input type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} maxLength={255} className={inputClass} />
+              </label>
+
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label htmlFor="target-weight" className="text-sm font-semibold">Target weight <span className="font-normal text-mute">(optional)</span></label>
+                  <Toggle options={[['kg', 'kg'], ['lb', 'lb']]} value={weightUnit} onChange={setWeightUnit} />
+                </div>
+                <input id="target-weight" type="number" min={kg ? 20 : 44} max={kg ? 350 : 772} step="0.1"
+                  value={targetWeightKg === '' ? '' : kg ? targetWeightKg : Math.round(targetWeightKg * LB_PER_KG * 10) / 10}
+                  onChange={(e) => setTargetWeightKg(e.target.value === '' ? '' : kg ? e.target.value : String(Number(e.target.value) / LB_PER_KG))}
+                  className={inputClass} />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="profile-picture" className="block text-sm font-semibold">Profile picture <span className="font-normal text-mute">(optional, JPG/PNG/WebP up to 5 MB)</span></label>
+                <input id="profile-picture" type="file" accept="image/jpeg,image/png,image/webp" onChange={setPicture}
+                  className="block w-full text-sm text-mute file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-ink hover:file:bg-white/20" />
+                {pictureError && <p role="alert" className="text-xs text-danger">{pictureError}</p>}
+                {profilePicture && <p className="text-xs text-mute">Selected: {profilePicture.name}</p>}
+              </div>
+
+              <MultiChoice label="Food allergies" options={ALLERGIES} selected={allergies}
+                onToggle={toggleSelection(setAllergies)} otherSelected={allergyOtherSelected}
+                onToggleOther={() => setAllergyOtherSelected((selected) => !selected)}
+                otherValue={otherAllergy} onOtherChange={setOtherAllergy} />
+              <MultiChoice label="Health conditions" options={HEALTH_CONDITIONS} selected={healthConditions}
+                onToggle={toggleSelection(setHealthConditions)} otherSelected={conditionOtherSelected}
+                onToggleOther={() => setConditionOtherSelected((selected) => !selected)}
+                otherValue={otherCondition} onOtherChange={setOtherCondition} />
+              <label className="block space-y-1.5 text-sm font-semibold">
+                Dietary preferences <span className="font-normal text-mute">(optional)</span>
+                <textarea value={dietaryPreferences} onChange={(e) => setDietaryPreferences(e.target.value)} rows={2} className={inputClass} />
+              </label>
+            </div>
+
+            {saveError && <p role="alert" className="mt-4 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{saveError}</p>}
+            <Nav onBack={() => setStep(2)} onNext={finish} nextLabel={saving ? 'Saving...' : 'Finish setup'} disabled={!activityLevel || saving || Boolean(pictureError)} last />
           </section>
         )}
       </div>

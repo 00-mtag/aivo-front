@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Pencil, Plus, Trash2, UtensilsCrossed } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
+import AskAivoFloating from '../components/AskAivoFloating'
 import AddFoodModal, { Stepper } from '../components/nutrition/AddFoodModal'
 import GoalModal from '../components/nutrition/GoalModal'
 import { ghostBtn, goldBtn } from '../components/workouts/Modal'
@@ -8,6 +9,8 @@ import { getProfile } from '../lib/profile'
 import { recommend } from '../lib/recommend'
 import useNutrition from '../lib/useNutrition'
 import { MEAL_TYPES, dayTotals, fromYmd, mealTotals, toYmd, weekDates } from '../lib/nutrition'
+
+const AI_SUGGESTIONS = ['Calculate my calorie and macro goals', 'Suggest a high-protein meal', 'How should I fuel endurance training?']
 
 const fmt = (n) => Math.round(n).toLocaleString()
 const MACRO_ROWS = [
@@ -28,6 +31,15 @@ export default function Nutrition() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [addFor, setAddFor] = useState(null)      // meal type whose "Add food" modal is open
   const [goalOpen, setGoalOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches)
+  const [aiWide, setAiWide] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)')
+    const onChange = (e) => setAiOpen(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const foodById = Object.fromEntries(foods.map((x) => [x.food_id, x]))
   const dates = weekDates(weekOffset)
@@ -56,7 +68,7 @@ export default function Nutrition() {
   return (
     <div className="min-h-screen bg-[#0d0d0d]">
       <Sidebar />
-      <main className="min-h-screen bg-[#161616] px-5 pb-28 pt-8 sm:px-8 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-12">
+      <main className={`min-h-screen bg-[#161616] px-5 pb-28 pt-8 transition-[padding] sm:px-8 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-12 ${aiOpen ? (aiWide ? 'xl:pr-[43rem] 2xl:pr-[51rem]' : 'xl:pr-[31rem] 2xl:pr-[35rem]') : ''}`}>
         <header>
           <h1 className="text-3xl font-bold sm:text-4xl">Meal Plan</h1>
           <p className="mt-1 text-sm text-ink/80">Plan what you eat and hit your daily targets.</p>
@@ -181,6 +193,7 @@ export default function Nutrition() {
           onSave={(g) => { nu.saveGoal(g); setGoalOpen(false) }}
           onReset={() => { nu.resetGoal(); setGoalOpen(false) }} />
       )}
+      <AskAivoFloating open={aiOpen} onOpen={() => setAiOpen(true)} onClose={() => setAiOpen(false)} suggestions={AI_SUGGESTIONS} wide={aiWide} onToggleWide={() => setAiWide((w) => !w)} />
     </div>
   )
 }

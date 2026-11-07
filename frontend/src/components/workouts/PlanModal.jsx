@@ -7,16 +7,28 @@ export default function PlanModal({ plan, onSave, onClose }) {
     name: plan?.name ?? '', description: plan?.description ?? '', goal: plan?.goal ?? GOALS[1],
     level: plan?.level ?? 'Beginner', minutes: plan?.minutes ?? 45, weeks: plan ? planWeeks(plan) : 4,
   })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
   const clamp = (v, lo, hi, fallback) => Math.min(hi, Math.max(lo, Number(v) || fallback))
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
-    if (f.name.trim()) onSave({ ...f, minutes: clamp(f.minutes, 10, 180, 45), weeks: clamp(f.weeks, 1, 52, 4) })
+    if (!f.name.trim()) return
+    setSaving(true)
+    setError('')
+    try {
+      await onSave({ ...f, minutes: clamp(f.minutes, 10, 180, 45), weeks: clamp(f.weeks, 1, 52, 4) })
+    } catch (saveError) {
+      setError(saveError.message || 'The workout could not be saved.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <Modal title={plan ? 'Edit plan' : 'Create new plan'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
+        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <Field label="Plan name"><input autoFocus value={f.name} onChange={set('name')} maxLength={40} placeholder="e.g. Lean Bulk Plan" className={fieldClass} /></Field>
         <Field label="Description (optional)"><input value={f.description} onChange={set('description')} maxLength={90} placeholder="What is this plan for?" className={fieldClass} /></Field>
         <Field label="Goal">
@@ -36,8 +48,8 @@ export default function PlanModal({ plan, onSave, onClose }) {
         </div>
         <p className="text-[11px] text-mute">{plan ? '' : 'After creating the plan you can add exercises to each day of the week.'}</p>
         <div className="flex justify-end gap-3 pt-1">
-          <button type="button" onClick={onClose} className={ghostBtn}>Cancel</button>
-          <button type="submit" disabled={!f.name.trim()} className={goldBtn}>{plan ? 'Save changes' : 'Create plan'}</button>
+          <button type="button" onClick={onClose} disabled={saving} className={ghostBtn}>Cancel</button>
+          <button type="submit" disabled={!f.name.trim() || saving} className={goldBtn}>{saving ? 'Saving...' : plan ? 'Save changes' : 'Create plan'}</button>
         </div>
       </form>
     </Modal>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, Minus, Pause, Play, Plus, RotateCcw, SkipForward, Trophy, X } from 'lucide-react'
 import { DAY_NAMES, timedSeconds } from '../../lib/workouts'
+import { api, errorsFrom } from '../../lib/api'
 import { goldBtn } from './Modal'
 
 const REST_TIMED = 30   // seconds of rest after a timed set
@@ -142,6 +143,9 @@ export default function WorkoutSession({ plan, day, onClose }) {
   const [resting, setResting] = useState(false)
   const [finished, setFinished] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  const [savingRecord, setSavingRecord] = useState(false)
+  const [recordError, setRecordError] = useState('')
+  const [pendingRecord, setPendingRecord] = useState(null)
   const startedAt = useRef(Date.now())
 
   useEffect(() => {
@@ -153,9 +157,37 @@ export default function WorkoutSession({ plan, day, onClose }) {
 
   const exit = () => { if (finished || window.confirm('End this workout? Your progress will not be saved.')) onClose() }
   const goTo = (n) => { setResting(false); setI(n) }
+  const saveCompletion = async (record) => {
+    setSavingRecord(true)
+    setRecordError('')
+    try {
+      await api.post('/progress/workouts', record)
+      setPendingRecord(null)
+      setFinished(true)
+    } catch (error) {
+      setPendingRecord(record)
+      setRecordError(errorsFrom(error).form)
+    } finally {
+      setSavingRecord(false)
+    }
+  }
   const mark = (value) => {
-    setStatus((s) => ({ ...s, [list[i].id]: value }))
-    if (i === list.length - 1) { setResting(false); setFinished(true) } else goTo(i + 1)
+    const nextStatus = { ...status, [list[i].id]: value }
+    setStatus(nextStatus)
+    if (i === list.length - 1) {
+      setResting(false)
+      const duration = Math.floor((Date.now() - startedAt.current) / 1000)
+      setElapsed(duration)
+      void saveCompletion({
+        workout_id: plan.id,
+        workout_type: DAY_NAMES[day],
+        workout_duration: duration,
+        exercises_done: list.filter((exercise) => nextStatus[exercise.id] === 'done').length,
+        exercises_skipped: list.filter((exercise) => nextStatus[exercise.id] === 'skipped').length,
+      })
+    } else {
+      goTo(i + 1)
+    }
   }
 
   const ex = list[i]
@@ -219,6 +251,14 @@ export default function WorkoutSession({ plan, day, onClose }) {
           </section>
         ) : (
           <section className="flex flex-1 flex-col py-6">
+            {recordError && (
+              <div role="alert" className="mb-4 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+                <p>Workout finished, but its progress could not be saved: {recordError}</p>
+                <button type="button" disabled={savingRecord} onClick={() => pendingRecord && saveCompletion(pendingRecord)} className="mt-2 font-semibold underline disabled:opacity-50">
+                  {savingRecord ? 'Saving...' : 'Retry saving'}
+                </button>
+              </div>
+            )}
             <div className="flex gap-1.5" aria-hidden="true">
               {list.map((e, n) => <span key={e.id} className={`h-1 flex-1 rounded-full ${n < i ? 'bg-gold' : n === i ? 'bg-gold/60' : 'bg-white/15'}`} />)}
             </div>
@@ -240,13 +280,13 @@ export default function WorkoutSession({ plan, day, onClose }) {
 
             <div className="mt-auto pt-8">
               {list[i + 1] && <p className="mb-3 text-center text-xs text-mute">Up next: <span className="text-ink">{list[i + 1].name}</span></p>}
-              <button type="button" disabled={!allDone} onClick={() => mark('done')} className={`${goldBtn} flex w-full items-center justify-center gap-2 py-4 text-base`}>
-                <Check size={20} strokeWidth={3} /> {i === list.length - 1 ? 'Done, finish workout' : 'Done, next exercise'}
+              <button type="button" disabled={!allDone || savingRecord} onClick={() => mark('done')} className={`${goldBtn} flex w-full items-center justify-center gap-2 py-4 text-base`}>
+                <Check size={20} strokeWidth={3} /> {savingRecord ? 'Saving workout...' : i === list.length - 1 ? 'Done, finish workout' : 'Done, next exercise'}
               </button>
               {!allDone && <p className="mt-2 text-center text-[11px] text-mute">{timed ? 'Finish every set timer to continue.' : 'Check off every set to continue.'}</p>}
               <div className="mt-3 flex justify-between text-sm font-semibold text-mute">
-                <button type="button" disabled={i === 0} onClick={() => goTo(i - 1)} className="flex items-center gap-1 transition hover:text-ink disabled:opacity-30"><ChevronLeft size={16} /> Previous</button>
-                <button type="button" onClick={() => mark('skipped')} className="flex items-center gap-1 transition hover:text-ink">Skip <SkipForward size={16} /></button>
+                <button type="button" disabled={i === 0 || savingRecord} onClick={() => goTo(i - 1)} className="flex items-center gap-1 transition hover:text-ink disabled:opacity-30"><ChevronLeft size={16} /> Previous</button>
+                <button type="button" disabled={savingRecord} onClick={() => mark('skipped')} className="flex items-center gap-1 transition hover:text-ink disabled:opacity-50">Skip <SkipForward size={16} /></button>
               </div>
             </div>
           </section>

@@ -7,7 +7,7 @@ import { uid } from './workouts'
     meals           -> { meal_id, meal_type, meal_date (YYYY-MM-DD), notes, items: [...] }
     meal_items      -> { meal_item_id, food_id, quantity, calories, protein, carbohydrates, fat, notes }
     nutrition_goal  -> { daily_calories, daily_protein, daily_carbohydrates, daily_fat, start_date, end_date }
-  TODO: load and save through the API instead of localStorage.
+  The API is the primary store; localStorage is used when the API is unavailable.
 */
 
 export const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
