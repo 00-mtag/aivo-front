@@ -17,7 +17,7 @@ export default function Sidebar() {
         <NavLink to={root} end aria-label="Home" title="Home" className={link}><Home size={26} /></NavLink>
         <NavLink to={`${root}/workouts`} aria-label="Workouts" title="Workouts" className={link}><Dumbbell size={26} /></NavLink>
         <NavLink to={`${root}/nutrition`} aria-label="Meal plan" title="Meal plan" className={link}><UtensilsCrossed size={26} /></NavLink>
-        <button type="button" aria-label="AI Coach (coming soon)" title="AI Coach: coming soon" className={soon}><Bot size={26} /></button>
+        <NavLink to={`${root}/ai-coach`} aria-label="AI Coach" title="AI Coach" className={link}><Bot size={26} /></NavLink>
       </nav>
       <button type="button" aria-label="Settings (coming soon)" title="Settings: coming soon" className={soon}><Settings size={26} /></button>
     </aside>
