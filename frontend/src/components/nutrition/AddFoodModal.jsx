@@ -18,7 +18,7 @@ export function Stepper({ value, onChange, min = 0.5, max = 20, step = 0.5 }) {
 const perServing = (food) => `${food.serving_size} ${food.serving_unit} · ${Math.round(food.calories)} kcal · P ${food.protein} C ${food.carbohydrates} F ${food.fat}`
 
 function CustomFood({ foods, onSave, onBack }) {
-  const [f, setF] = useState({ name: '', serving_size: '1', serving_unit: 'serving', calories: '', protein: '', carbohydrates: '', fat: '' })
+  const [f, setF] = useState({ name: '', ingredients: '', serving_size: '1', serving_unit: 'serving', calories: '', protein: '', carbohydrates: '', fat: '' })
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -30,7 +30,7 @@ function CustomFood({ foods, onSave, onBack }) {
     const n = (v) => Math.max(0, Number(v) || 0)
     setBusy(true); setError('')
     try {
-      await onSave({ food_id: `custom_${uid()}`, uploaded_by: 'me', name: f.name.trim(), description: '', calories: n(f.calories), protein: n(f.protein), carbohydrates: n(f.carbohydrates), fat: n(f.fat), serving_size: f.serving_size.trim() || '1', serving_unit: f.serving_unit.trim() || 'serving' })
+      await onSave({ food_id: `custom_${uid()}`, uploaded_by: 'me', name: f.name.trim(), ingredients: f.ingredients.trim(), calories: n(f.calories), protein: n(f.protein), carbohydrates: n(f.carbohydrates), fat: n(f.fat), serving_size: f.serving_size.trim() || '1', serving_unit: f.serving_unit.trim() || 'serving' })
     } catch (err) {
       setError(err.message || 'Could not save this food.')
       setBusy(false)
@@ -40,6 +40,7 @@ function CustomFood({ foods, onSave, onBack }) {
   return (
     <form onSubmit={submit} className="space-y-4">
       <Field label="Food name"><input autoFocus value={f.name} onChange={set('name')} maxLength={50} placeholder="e.g. Chicken adobo" className={fieldClass} /></Field>
+      <Field label="Ingredients (optional)"><textarea value={f.ingredients} onChange={set('ingredients')} maxLength={5000} rows={2} placeholder="e.g. Rice, salt (optional), chicken meat (optional)" className={fieldClass} /></Field>
       {dupe && <p className="text-xs text-danger">A food with this name already exists.</p>}
       {error && <p role="alert" className="text-xs text-danger">{error}</p>}
       <div className="grid grid-cols-2 gap-3">

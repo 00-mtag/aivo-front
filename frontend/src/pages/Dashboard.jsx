@@ -31,7 +31,7 @@ export default function Dashboard() {
       <main className="min-h-screen bg-[#161616] px-5 pb-24 pt-8 sm:px-8 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-10">
         <header className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold sm:text-4xl">Hello, {userName()}</h1>
+            <h1 className="text-3xl font-bold sm:text-4xl">Welcome Maderpaker, {userName()}</h1>
             <p className="mt-1 text-sm">{greeting}, start your day now.</p>
           </div>
           <div className="flex items-center gap-5 text-gold">
@@ -52,7 +52,16 @@ export default function Dashboard() {
               <div className="order-4"><WeekCalendar /></div>
             </div>
           </div>
-          <AskAivo />
+          <AskAivo context={{
+            page: 'Dashboard',
+            data: {
+              fitnessGoal: rec.goal,
+              experienceLevel: rec.level,
+              dailyCalorieTargetEstimate: rec.calories,
+              dailyProteinTargetEstimateGrams: rec.protein,
+              todayWorkoutFocus: focus,
+            },
+          }} />
         </div>
       </main>
     </div>

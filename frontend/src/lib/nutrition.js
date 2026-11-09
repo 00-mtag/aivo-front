@@ -3,7 +3,7 @@ import { uid } from './workouts'
 
 /*
   Data shapes mirror the database tables so the move to Laravel is a straight swap:
-    food            -> { food_id, uploaded_by, name, description, calories, protein, carbohydrates, fat, serving_size, serving_unit }
+    food            -> { food_id, uploaded_by, name, ingredients, calories, protein, carbohydrates, fat, serving_size, serving_unit }
     meals           -> { meal_id, meal_type, meal_date (YYYY-MM-DD), notes, items: [...] }
     meal_items      -> { meal_item_id, food_id, quantity, calories, protein, carbohydrates, fat, notes }
     nutrition_goal  -> { daily_calories, daily_protein, daily_carbohydrates, daily_fat, start_date, end_date }
@@ -14,7 +14,7 @@ export const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack']
 const MACROS = ['calories', 'protein', 'carbohydrates', 'fat']
 
 const f = (food_id, name, calories, protein, carbohydrates, fat, serving_size, serving_unit) =>
-  ({ food_id, uploaded_by: null, name, description: '', calories, protein, carbohydrates, fat, serving_size, serving_unit })
+  ({ food_id, uploaded_by: null, name, ingredients: '', calories, protein, carbohydrates, fat, serving_size, serving_unit })
 
 // Typical values per serving. They are estimates and vary by brand and cooking method.
 export const FOOD_LIBRARY = [

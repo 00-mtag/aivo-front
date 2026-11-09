@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Modal, { Field, fieldClass, ghostBtn, goldBtn } from './Modal'
 import { GOALS, LEVELS, planWeeks } from '../../lib/workouts'
 
-export default function PlanModal({ plan, onSave, onClose }) {
+export default function PlanModal({ plan, onSave, onClose, onAiDecide }) {
   const [f, setF] = useState({
     name: plan?.name ?? '', description: plan?.description ?? '', goal: plan?.goal ?? GOALS[1],
     level: plan?.level ?? 'Beginner', minutes: plan?.minutes ?? 45, weeks: plan ? planWeeks(plan) : 4,
@@ -47,8 +47,9 @@ export default function PlanModal({ plan, onSave, onClose }) {
           <Field label="Duration (weeks)"><input type="number" min="1" max="52" value={f.weeks} onChange={set('weeks')} className={fieldClass} /></Field>
         </div>
         <p className="text-[11px] text-mute">{plan ? '' : 'After creating the plan you can add exercises to each day of the week.'}</p>
-        <div className="flex justify-end gap-3 pt-1">
+        <div className="flex flex-wrap justify-end gap-3 pt-1">
           <button type="button" onClick={onClose} disabled={saving} className={ghostBtn}>Cancel</button>
+          {!plan && <button type="button" onClick={onAiDecide} disabled={saving} className={ghostBtn}>Let AI decide</button>}
           <button type="submit" disabled={!f.name.trim() || saving} className={goldBtn}>{saving ? 'Saving...' : plan ? 'Save changes' : 'Create plan'}</button>
         </div>
       </form>

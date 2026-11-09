@@ -7,6 +7,7 @@ import PlanModal from '../components/workouts/PlanModal'
 import ExerciseModal from '../components/workouts/ExerciseModal'
 import CalendarModal from '../components/workouts/CalendarModal'
 import WorkoutSession from '../components/workouts/WorkoutSession'
+import AiPlanModal from '../components/workouts/AiPlanModal'
 import { ghostBtn, goldBtn } from '../components/workouts/Modal'
 import { GOALS, isActive, newPlan, normalizeWorkout, savePlans, uid, workoutBody } from '../lib/workouts'
 import { api, errorsFrom } from '../lib/api'
@@ -39,6 +40,7 @@ export default function Workouts() {
   const [exerciseCatalog, setExerciseCatalog] = useState({ goal: null, exercises: [], error: '' })
   const [openId, setOpenId] = useState(() => plans[0]?.id ?? null)
   const [planModal, setPlanModal] = useState(null)   // { planId } | { planId: null } for a new plan
+  const [aiPlanOpen, setAiPlanOpen] = useState(false)
   const [exModal, setExModal] = useState(null)       // { planId, day, exercise, edit }
   const [newId, setNewId] = useState(null)           // plan created in this visit (gets a NEW badge)
   const [session, setSession] = useState(null)       // { planId, day } while a workout is running
@@ -142,6 +144,43 @@ export default function Workouts() {
       }
       setActionError('')
       setPlanModal(null)
+    } catch (error) {
+      throw new Error(errorsFrom(error).form, { cause: error })
+    }
+  }
+  const saveAiPlan = async (generated) => {
+    const plan = newPlan({
+      name: generated.name,
+      description: generated.description,
+      goal: generated.goal,
+      level: generated.level,
+      minutes: generated.minutes,
+      weeks: generated.weeks,
+    })
+    for (const exercise of generated.exercises) {
+      plan.schedule[exercise.day].push({
+        id: uid(),
+        exerciseId: Number(exercise.exercise_id),
+        name: exercise.name,
+        sets: Number(exercise.sets),
+        reps: exercise.reps,
+        muscle: exercise.muscle || '',
+        notes: exercise.notes || '',
+        rest_seconds: exercise.rest_seconds ?? '',
+        weight: '',
+      })
+    }
+
+    try {
+      const { data } = await api.post('/workouts', workoutBody(plan))
+      const saved = normalizeWorkout(data.workout)
+      setPlans((current) => [saved, ...current])
+      setOpenId(saved.id)
+      setNewId(saved.id)
+      setStatusFilter('all')
+      setGoalFilter('all')
+      setActionError('')
+      setAiPlanOpen(false)
     } catch (error) {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
@@ -266,8 +305,11 @@ export default function Workouts() {
       </main>
 
       {planModal && (planModal.planId ? activePlan : true) && (
-        <PlanModal plan={activePlan || null} onSave={savePlan} onClose={() => setPlanModal(null)} />
+        <PlanModal plan={activePlan || null} onSave={savePlan}
+          onAiDecide={() => { setPlanModal(null); setAiPlanOpen(true) }}
+          onClose={() => setPlanModal(null)} />
       )}
+      {aiPlanOpen && <AiPlanModal onGenerate={saveAiPlan} onClose={() => { setAiPlanOpen(false); setPlanModal({ planId: null }) }} />}
       {exModal && exPlan && (
         <ExerciseModal key={exModal.exercise?.id ?? 'new'} exercise={exModal.exercise} startEditing={exModal.edit}
           exerciseNames={exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.exercises.map(({ name }) => name) : []}
@@ -282,7 +324,31 @@ export default function Workouts() {
       {calPlan && <CalendarModal plan={calPlan} onClose={() => setCalId(null)} />}
       {sessionPlan && <WorkoutSession plan={sessionPlan} day={session.day} onClose={() => setSession(null)} />}
 
-      <AskAivoFloating open={aiOpen} onOpen={() => setAiOpen(true)} onClose={() => setAiOpen(false)} suggestions={AI_SUGGESTIONS} wide={aiWide} onToggleWide={() => setAiWide((w) => !w)} />
+      <AskAivoFloating
+        open={aiOpen}
+        onOpen={() => setAiOpen(true)}
+        onClose={() => setAiOpen(false)}
+        suggestions={AI_SUGGESTIONS}
+        context={{
+          page: 'Workout plans',
+          data: {
+            loading: plansLoading,
+            plans: plans.map((plan) => ({
+              name: plan.name,
+              goal: plan.goal,
+              level: plan.level,
+              minutesPerSession: plan.minutes,
+              active: plan.active,
+              schedule: Object.fromEntries(Object.entries(plan.schedule).map(([day, exercises]) => [
+                day,
+                exercises.map(({ name, sets, reps, muscle }) => ({ name, sets, reps, muscle })),
+              ])),
+            })),
+          },
+        }}
+        wide={aiWide}
+        onToggleWide={() => setAiWide((w) => !w)}
+      />
     </div>
   )
 }

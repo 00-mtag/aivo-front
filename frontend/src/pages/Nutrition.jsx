@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, Pencil, Plus, Trash2, UtensilsCrossed } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
 import AskAivoFloating from '../components/AskAivoFloating'
 import AddFoodModal, { Stepper } from '../components/nutrition/AddFoodModal'
 import GoalModal from '../components/nutrition/GoalModal'
-import { ghostBtn, goldBtn } from '../components/workouts/Modal'
+import AiWeekPlanModal from '../components/nutrition/AiWeekPlanModal'
+import { goldBtn } from '../components/workouts/Modal'
 import { getProfile } from '../lib/profile'
 import { recommend } from '../lib/recommend'
 import useNutrition from '../lib/useNutrition'
@@ -31,6 +32,8 @@ export default function Nutrition() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [addFor, setAddFor] = useState(null)      // meal type whose "Add food" modal is open
   const [goalOpen, setGoalOpen] = useState(false)
+  const [aiPlanOpen, setAiPlanOpen] = useState(false)
+  const [aiPlanSaving, setAiPlanSaving] = useState(false)
   const [aiOpen, setAiOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches)
   const [aiWide, setAiWide] = useState(false)
 
@@ -57,11 +60,28 @@ export default function Nutrition() {
   }
   const goToday = () => { setWeekOffset(0); setSelected(todayYmd) }
 
-  const generate = (ymds, label) => {
-    if (meals.some((m) => ymds.includes(m.meal_date) && m.items.length) && !window.confirm(`Replace the meals already logged for ${label}?`)) return
-    nu.generate(ymds)
+  const confirmReplaceWeek = () => {
+    const weekDatesList = dates.map(toYmd)
+    return !meals.some((meal) => weekDatesList.includes(meal.meal_date) && meal.items.length)
+      || window.confirm(`Replace the meals already planned for ${weekLabel}?`)
+  }
+  const saveGeneratedWeek = async (generatedPlan) => {
+    setAiPlanSaving(true)
+    try {
+      nu.replaceWeekMeals(generatedPlan)
+      setAiPlanOpen(false)
+    } finally {
+      setAiPlanSaving(false)
+    }
   }
 
+  const calorieOptions = [1800, 1900, 2000, 2100, 2200, 2300]
+  const calorieAdjustments = { 'Lose weight': -500, 'Build muscle': 300, 'Improve endurance': 100, 'Maintain fitness': 0 }
+  const tdee = Number(getProfile()?.tdee) || rec.calories
+  const defaultCalories = calorieOptions.reduce((closest, option) =>
+    Math.abs(option - (tdee + (calorieAdjustments[rec.goal] ?? 0)))
+      < Math.abs(closest - (tdee + (calorieAdjustments[rec.goal] ?? 0))) ? option : closest,
+  calorieOptions[0])
   const dateLabel = fromYmd(selected).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
   const weekLabel = `${dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${dates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
 
@@ -87,8 +107,7 @@ export default function Nutrition() {
             )}
 
             <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => generate(dates.map(toYmd), 'this week')} className={`${goldBtn} flex items-center gap-2`}><CalendarDays size={16} /> Plan the whole week</button>
-              <button type="button" onClick={() => generate([selected], dateLabel)} className={`${ghostBtn} flex items-center gap-2`}><UtensilsCrossed size={16} /> Plan this day</button>
+              <button type="button" onClick={() => setAiPlanOpen(true)} disabled={aiPlanSaving} className={`${goldBtn} flex items-center gap-2`}><Sparkles size={16} /> Let AI decide</button>
             </div>
 
             {/* Week strip */}
@@ -193,7 +212,53 @@ export default function Nutrition() {
           onSave={(g) => { nu.saveGoal(g); setGoalOpen(false) }}
           onReset={() => { nu.resetGoal(); setGoalOpen(false) }} />
       )}
-      <AskAivoFloating open={aiOpen} onOpen={() => setAiOpen(true)} onClose={() => setAiOpen(false)} suggestions={AI_SUGGESTIONS} wide={aiWide} onToggleWide={() => setAiWide((w) => !w)} />
+      {aiPlanOpen && (
+        <AiWeekPlanModal defaultCalories={defaultCalories} startDate={toYmd(dates[0])} goal={rec.goal} gender={getProfile()?.gender}
+          beforeGenerate={confirmReplaceWeek}
+          onSave={saveGeneratedWeek}
+          onClose={() => { if (!aiPlanSaving) setAiPlanOpen(false) }} />
+      )}
+      <AskAivoFloating
+        open={aiOpen}
+        onOpen={() => setAiOpen(true)}
+        onClose={() => setAiOpen(false)}
+        suggestions={AI_SUGGESTIONS}
+        context={{
+          page: 'Nutrition',
+          data: {
+            selectedDate: selected,
+            dailyGoal: {
+              calories: calGoal,
+              proteinGrams: goal.daily_protein,
+              carbohydratesGrams: goal.daily_carbohydrates,
+              fatGrams: goal.daily_fat,
+            },
+            loggedSoFar: {
+              calories: totals.calories,
+              proteinGrams: totals.protein,
+              carbohydratesGrams: totals.carbohydrates,
+              fatGrams: totals.fat,
+            },
+            caloriesRemaining: remaining,
+            meals: meals
+              .filter((meal) => meal.meal_date === selected)
+              .map((meal) => ({
+                type: meal.meal_type,
+                notes: meal.notes,
+                items: meal.items.map((item) => ({
+                  name: foodById[item.food_id]?.name ?? item.food_name ?? 'Food',
+                  servings: item.quantity,
+                  calories: item.calories,
+                  proteinGrams: item.protein,
+                  carbohydratesGrams: item.carbohydrates,
+                  fatGrams: item.fat,
+                })),
+              })),
+          },
+        }}
+        wide={aiWide}
+        onToggleWide={() => setAiWide((w) => !w)}
+      />
     </div>
   )
 }

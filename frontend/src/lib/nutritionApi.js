@@ -6,7 +6,7 @@ const day = (v) => String(v ?? '').slice(0, 10)
 
 // Decimal columns arrive from Laravel as strings ("182.00"), so everything is turned into numbers here.
 export const normFood = (f) => ({
-  food_id: Number(f.food_id), uploaded_by: f.uploaded_by ?? null, name: f.name, description: f.description ?? '',
+  food_id: Number(f.food_id), uploaded_by: f.uploaded_by ?? null, name: f.name, ingredients: f.ingredients ?? '',
   calories: num(f.calories), protein: num(f.protein), carbohydrates: num(f.carbohydrates), fat: num(f.fat),
   serving_size: f.serving_size ?? '1', serving_unit: f.serving_unit ?? 'serving',
 })
@@ -69,7 +69,7 @@ export const goalBody = (g) => ({
   daily_calories: g.daily_calories, daily_protein: g.daily_protein, daily_carbohydrates: g.daily_carbohydrates, daily_fat: g.daily_fat,
   start_date: g.start_date || toYmd(new Date()), end_date: g.end_date || null,
 })
-export const foodBody = (f) => ({ name: f.name, description: f.description || null, calories: f.calories, protein: f.protein, carbohydrates: f.carbohydrates, fat: f.fat, serving_size: f.serving_size, serving_unit: f.serving_unit })
+export const foodBody = (f) => ({ name: f.name, ingredients: f.ingredients || null, calories: f.calories, protein: f.protein, carbohydrates: f.carbohydrates, fat: f.fat, serving_size: f.serving_size, serving_unit: f.serving_unit })
 
 export const saveMeal = (m) => (typeof m.meal_id === 'number' ? api.put(`/nutrition/meals/${m.meal_id}`, mealBody(m)) : api.post('/nutrition/meals', mealBody(m)))
 export const saveGoal = (g) => (g.goal_id ? api.put(`/nutrition/goals/${g.goal_id}`, goalBody(g)) : api.post('/nutrition/goals', goalBody(g)))

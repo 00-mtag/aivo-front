@@ -4,7 +4,7 @@ import { ArrowRight, Check } from 'lucide-react'
 import WheelPicker from '../components/onboarding/WheelPicker'
 import logo from '../assets/logo.png'
 import { api, errorsFrom } from '../lib/api'
-import { saveProfile } from '../lib/profile'
+import { calculateTdee, saveProfile } from '../lib/profile'
 
 const GENDERS = ['Male', 'Female', 'Prefer not to say']
 const GOALS = ['Lose weight', 'Build muscle', 'Improve endurance', 'Maintain fitness']
@@ -29,7 +29,7 @@ const CMS = Array.from({ length: 151 }, (_, i) => 100 + i)       // 100 to 250 c
 const KGS = Array.from({ length: 331 }, (_, i) => 20 + i)        // 20 to 350 kg
 const LBS = Array.from({ length: 729 }, (_, i) => 44 + i)        // 44 to 772 lb
 const LB_PER_KG = 2.20462
-const ACTIVITY_LEVELS = ['Sedentary', 'Lightly active', 'Moderately active', 'Very active']
+const ACTIVITY_LEVELS = ['Sedentary', 'Lightly active', 'Moderately active', 'Very active', 'Extra active']
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
 const pad = (n) => String(n).padStart(2, '0')
 const fmtIn = (n) => `${Math.floor(n / 12)} ft ${n % 12} in`
@@ -139,11 +139,12 @@ export default function Onboarding() {
   )
 
   const birthDate = `${birth.y}-${pad(birth.m + 1)}-${pad(birth.d)}`
+  const age = new Date().getFullYear() - birth.y
+    - (new Date() < new Date(birth.y, birth.m, birth.d) ? 1 : 0)
+  const tdee = calculateTdee({ gender, age, heightCm, weightKg, activityLevel })
   const finish = async () => {
     setSaving(true)
     setSaveError('')
-    const age = new Date().getFullYear() - birth.y
-      - (new Date() < new Date(birth.y, birth.m, birth.d) ? 1 : 0)
     const profile = {
       gender,
       goal,
@@ -153,6 +154,7 @@ export default function Onboarding() {
       weightKg: Math.round(weightKg * 10) / 10,
       phoneNumber: phoneNumber.trim(),
       activityLevel,
+      tdee,
       targetWeightKg: targetWeightKg === '' ? null : Math.round(Number(targetWeightKg) * 10) / 10,
       allergies: [...allergies, ...(allergyOtherSelected && otherAllergy.trim() ? [otherAllergy.trim()] : [])],
       healthConditions: [...healthConditions, ...(conditionOtherSelected && otherCondition.trim() ? [otherCondition.trim()] : [])],
@@ -181,8 +183,8 @@ export default function Onboarding() {
     form.append('_method', 'PUT')
 
     try {
-      await api.post('/profile', form)
-      saveProfile(profile)
+      const { data } = await api.post('/profile', form)
+      saveProfile({ ...profile, tdee: Number(data.profile.tdee) })
       navigate('/app', { replace: true })
     } catch (error) {
       const { fields, form: message } = errorsFrom(error)
@@ -301,6 +303,16 @@ export default function Onboarding() {
                 {ACTIVITY_LEVELS.map((item) => <option key={item} value={item} className="bg-card">{item}</option>)}
               </select>
             </label>
+            {tdee !== null && (
+              <div className="mt-4 rounded-xl border border-gold/40 bg-gold/10 p-4">
+                <p className="text-sm text-gold">Estimated daily energy needs (TDEE)</p>
+                <p className="mt-1 text-2xl font-bold">{tdee.toLocaleString()} kcal/day</p>
+                <p className="mt-1 text-[11px] text-ink/80">
+                  Estimated using the Mifflin-St Jeor equation and your selected activity level.
+                  {gender === 'Prefer not to say' && ' For gender-neutral estimation, the midpoint of the two BMR adjustments is used.'}
+                </p>
+              </div>
+            )}
             <Nav onBack={() => setStep(1)} onNext={() => setStep(3)} disabled={!goal} />
           </section>
         )}

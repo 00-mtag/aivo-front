@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { uid } from './workouts'
 import { FOOD_LIBRARY, defaultGoal, loadNutrition, macrosFor, planDay, saveNutrition } from './nutrition'
-import { createFood as createFoodRequest, dedupeMeals, fetchNutrition, messageOf, normFood, normGoal, pickGoal, saveGoal as saveGoalRequest, saveMeal } from './nutritionApi'
+import { createFood as createFoodRequest, dedupeMeals, fetchNutrition, messageOf, normFood, normGoal, normMeal, pickGoal, saveGoal as saveGoalRequest, saveMeal } from './nutritionApi'
 
 const SAVE_DELAY = 500
 const keyOf = (date, type) => `${date}|${type}`
@@ -142,6 +142,28 @@ export default function useNutrition(rec) {
     })
   }
 
+  const replaceWeekMeals = ({ meals, nutrition_goal: nutritionGoal }) => {
+    if (!Array.isArray(meals) || !nutritionGoal) {
+      throw new Error('The saved weekly meal plan response was invalid.')
+    }
+    const savedMeals = meals.map(normMeal)
+    const dates = new Set(savedMeals.map((meal) => meal.meal_date))
+    Object.entries(timers.current).forEach(([key, timer]) => {
+      const [date] = key.split('|')
+      if (dates.has(date)) {
+        clearTimeout(timer)
+        delete timers.current[key]
+        dirty.current.delete(key)
+      }
+    })
+    commit((current) => ({
+      ...current,
+      goal: normGoal(nutritionGoal),
+      meals: dedupeMeals([...current.meals.filter((meal) => !dates.has(meal.meal_date)), ...savedMeals]),
+    }))
+    setSyncError('')
+  }
+
   const saveGoal = async (g) => {
     commit((d) => ({ ...d, goal: g }))
     if (modeRef.current !== 'online') return
@@ -165,5 +187,5 @@ export default function useNutrition(rec) {
 
   const retry = () => [...dirty.current].forEach((k) => { const [d, t] = k.split('|'); flush(d, t) })
 
-  return { ...data, status, notice, syncError, addItem, setQty, removeItem, setNote, generate, saveGoal, resetGoal, createFood, retry }
+  return { ...data, status, notice, syncError, addItem, setQty, removeItem, setNote, generate, replaceWeekMeals, saveGoal, resetGoal, createFood, retry }
 }

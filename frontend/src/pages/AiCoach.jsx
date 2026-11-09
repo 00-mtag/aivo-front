@@ -1,14 +1,8 @@
-import { Check, Clock, Dumbbell, Flame, Plus, Search, Send, Sparkles, UtensilsCrossed, Zap } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Dumbbell, Flame, Plus, Search, Send, Sparkles, Trash2, UtensilsCrossed, Zap } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
+import useAivoChat from '../lib/useAivoChat'
 import logo from '../assets/logo.png'
-
-/* Design only: everything here is sample content. Nothing is sent or saved yet. */
-
-const HISTORY = [
-  { group: 'Today', items: [{ title: 'Adjust my workout plan', time: '9:12 AM', active: true }, { title: 'Dinner ideas high in protein', time: '8:40 AM' }] },
-  { group: 'Yesterday', items: [{ title: 'How many calories do I need?' }, { title: 'Quick no-equipment workout' }] },
-  { group: 'Last 7 days', items: [{ title: 'Fixing my squat form' }, { title: 'Rest day or light cardio?' }, { title: 'Breakfast under 400 kcal' }] },
-]
 
 const QUICK = [
   { icon: Dumbbell, text: 'Adjust my workout plan' },
@@ -17,54 +11,85 @@ const QUICK = [
   { icon: Flame, text: 'How many calories do I need?' },
 ]
 
-const PLAN = [['Push-ups', '3 × 12'], ['Dumbbell Shoulder Press', '3 × 10'], ['Seated Cable Row', '3 × 12'], ['Plank', '3 × 45 sec']]
-
 const Avatar = ({ size = 'h-10 w-10' }) => (
   <span className={`grid ${size} shrink-0 place-items-center rounded-full border border-gold/50 bg-[#101010]`}><img src={logo} alt="" className="h-[60%] w-auto" /></span>
 )
 
-const AiMessage = ({ children }) => (
-  <div className="flex items-start gap-3">
-    <Avatar />
-    <div className="min-w-0 max-w-[85%] space-y-3">{children}</div>
-  </div>
-)
-const Bubble = ({ children }) => <p className="rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm leading-relaxed">{children}</p>
-
 export default function AiCoach() {
+  const {
+    messages,
+    busy,
+    error,
+    send,
+    newChat,
+    conversations,
+    activeConversationId,
+    historyError,
+    deletingConversationId,
+    selectConversation,
+    deleteConversation,
+  } = useAivoChat({ page: 'AIVO Coach', persistConversations: true })
+  const [text, setText] = useState('')
+  const [search, setSearch] = useState('')
+  const endRef = useRef(null)
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, busy, error])
+
+  const submit = (value) => {
+    if (!value.trim() || busy) return
+    send(value)
+    setText('')
+  }
+  const filteredConversations = conversations.filter((conversation) =>
+    (conversation.title || 'New chat').toLowerCase().includes(search.trim().toLowerCase()),
+  )
+
   return (
     <div className="min-h-screen bg-[#0d0d0d]">
       <Sidebar />
       <main className="flex h-screen flex-col overflow-hidden bg-[#161616] pb-16 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-0">
         <div className="flex min-h-0 flex-1">
-
-          {/* Conversation history (desktop) */}
           <aside className="hidden w-72 shrink-0 flex-col border-r border-white/10 p-4 lg:flex">
-            <button type="button" className="flex w-full items-center justify-center gap-2 rounded-full bg-gold px-5 py-3 text-sm font-bold text-black transition hover:brightness-110"><Plus size={16} /> New chat</button>
+            <button type="button" onClick={newChat} disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-full bg-gold px-5 py-3 text-sm font-bold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={16} /> New chat</button>
             <label className="mt-4 flex items-center gap-2 rounded-xl border border-white/10 bg-card px-3 py-2.5 text-mute focus-within:border-gold">
               <Search size={16} />
-              <input placeholder="Search chats" aria-label="Search chats" className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-mute" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search chats" aria-label="Search chats" className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-mute" />
             </label>
-            <div className="mt-5 flex-1 space-y-5 overflow-y-auto pr-1">
-              {HISTORY.map(({ group, items }) => (
-                <section key={group}>
-                  <h2 className="mb-2 px-2 text-[11px] font-semibold tracking-wide text-mute">{group.toUpperCase()}</h2>
-                  <ul className="space-y-1">
-                    {items.map(({ title, time, active }) => (
-                      <li key={title}>
-                        <button type="button" className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition ${active ? 'bg-gold/15 text-ink' : 'text-ink/80 hover:bg-white/5'}`}>
-                          <span className="truncate">{title}</span>
-                          {time && <span className="shrink-0 text-[10px] text-mute">{time}</span>}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
+            <div className="mt-5 min-h-0 flex-1 overflow-y-auto">
+              <h2 className="mb-2 px-2 text-[11px] font-semibold tracking-wide text-mute">SAVED CONVERSATIONS</h2>
+              <div className="space-y-1">
+                {filteredConversations.map((conversation) => (
+                  <div key={conversation.conversation_id} className="group flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => selectConversation(conversation.conversation_id)}
+                      disabled={busy}
+                      className={`min-w-0 flex-1 truncate rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-white/5 disabled:opacity-50 ${
+                        String(activeConversationId) === String(conversation.conversation_id) ? 'bg-gold/15 text-ink' : 'text-mute'
+                      }`}
+                      title={conversation.title || 'New chat'}
+                    >
+                      {conversation.title || 'New chat'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteConversation(conversation.conversation_id)}
+                      disabled={busy || deletingConversationId !== null}
+                      aria-label={`Delete ${conversation.title || 'conversation'}`}
+                      title="Delete conversation"
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-mute transition hover:bg-red-400/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+                {filteredConversations.length === 0 && (
+                  <p className="px-2 py-2 text-xs text-mute">{search ? 'No matching conversations.' : 'No saved conversations yet.'}</p>
+                )}
+              </div>
             </div>
           </aside>
 
-          {/* Chat */}
           <section className="flex min-w-0 flex-1 flex-col">
             <header className="flex items-center gap-3 border-b border-white/10 px-5 py-4 sm:px-8">
               <Avatar size="h-11 w-11" />
@@ -72,63 +97,50 @@ export default function AiCoach() {
                 <h1 className="text-lg font-bold leading-tight">AIVO Coach</h1>
                 <p className="flex items-center gap-1.5 text-xs text-mute"><span className="h-1.5 w-1.5 rounded-full bg-green-400" /> Your AI fitness &amp; nutrition coach</p>
               </div>
-              <button type="button" className="flex items-center gap-1.5 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold transition hover:bg-white/5 lg:hidden"><Plus size={14} /> New chat</button>
-              <button type="button" aria-label="More options" className="grid h-9 w-9 place-items-center rounded-lg text-mute transition hover:bg-white/10 hover:text-ink">
-                <span className="flex flex-col gap-[3px]"><i className="h-1 w-1 rounded-full bg-current" /><i className="h-1 w-1 rounded-full bg-current" /><i className="h-1 w-1 rounded-full bg-current" /></span>
-              </button>
+              <button type="button" onClick={newChat} disabled={busy} className="flex items-center gap-1.5 rounded-full border border-white/20 px-4 py-2 text-xs font-semibold transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50 lg:hidden"><Plus size={14} /> New chat</button>
             </header>
 
             <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-8">
               <div className="mx-auto max-w-3xl space-y-6">
-                <p className="text-center text-[11px] text-mute">Today · 9:12 AM</p>
-
-                <AiMessage>
-                  <Bubble>Hi Genn! I'm AIVO, your coach. Ask me about your workouts, meals or progress, and I'll help you plan your next move.</Bubble>
-                </AiMessage>
-
-                <div className="flex justify-end">
-                  <p className="max-w-[80%] rounded-2xl rounded-tr-sm bg-gold px-4 py-3 text-sm font-medium leading-relaxed text-black">Can you adjust my workout plan? I only have 30 minutes today.</p>
-                </div>
-
-                <AiMessage>
-                  <Bubble>Of course! Here is a 30-minute version of today's upper body session. It keeps the main movements and skips the long rest periods.</Bubble>
-                  <div className="rounded-2xl border border-white/10 bg-card p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-bold">Upper Body Express</p>
-                      <span className="flex items-center gap-3 text-[11px] text-mute"><span className="flex items-center gap-1"><Clock size={12} /> 30 min</span><span className="flex items-center gap-1"><Flame size={12} className="text-orange-400" /> ~250 kcal</span></span>
-                    </div>
-                    <ul className="mt-3 divide-y divide-white/10 rounded-xl border border-white/10 bg-black/20">
-                      {PLAN.map(([name, sets]) => (
-                        <li key={name} className="flex items-center justify-between px-3 py-2.5 text-sm"><span>{name}</span><span className="font-semibold text-gold">{sets}</span></li>
-                      ))}
-                    </ul>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button type="button" className="flex items-center gap-1.5 rounded-full bg-gold px-5 py-2 text-xs font-bold text-black transition hover:brightness-110"><Check size={14} strokeWidth={3} /> Add to my plan</button>
-                      <button type="button" className="rounded-full border border-white/20 px-5 py-2 text-xs font-semibold transition hover:bg-white/5">Start now</button>
-                    </div>
+                {historyError && <p role="alert" className="text-sm text-red-300">{historyError}</p>}
+                {messages.length === 0 && (
+                  <div className="flex items-start gap-3">
+                    <Avatar />
+                    <p className="max-w-[85%] rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm leading-relaxed">Hi! I'm AIVO, your coach. Ask me about your workouts, meals or progress, and I'll help you plan your next move.</p>
                   </div>
-                  <Bubble>Want me to make the same change for the rest of the week?</Bubble>
-                </AiMessage>
+                )}
+                {messages.map((item, index) => item.role === 'assistant' ? (
+                  <div key={index} className="flex items-start gap-3">
+                    <Avatar />
+                    <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm leading-relaxed">{item.content}</p>
+                  </div>
+                ) : (
+                  <div key={index} className="flex justify-end">
+                    <p className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-gold px-4 py-3 text-sm font-medium leading-relaxed text-black">{item.content}</p>
+                  </div>
+                ))}
+                {busy && <div className="flex items-start gap-3"><Avatar /><p className="rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm text-mute">AIVO is thinking...</p></div>}
+                {error && <p role="alert" className="ml-[52px] text-sm text-red-300">{error}</p>}
+                {messages.length === 0 && (
+                  <div className="flex flex-wrap gap-2 pl-[52px]">
+                    {QUICK.map(({ icon: Icon, text: suggestion }) => (
+                      <button key={suggestion} type="button" disabled={busy} onClick={() => submit(suggestion)} className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-left text-xs transition hover:border-gold/60 disabled:opacity-50">
+                        <Icon size={14} className="shrink-0 text-gold" />{suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div ref={endRef} />
               </div>
             </div>
 
-            {/* Composer */}
             <footer className="border-t border-white/10 px-5 pb-4 pt-3 sm:px-8">
-              <div className="mx-auto max-w-3xl">
-                <div className="flex gap-2 overflow-x-auto pb-3">
-                  {QUICK.map(({ icon: Icon, text }) => (
-                    <button key={text} type="button" className="flex shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs transition hover:border-gold/60">
-                      <Icon size={14} className="text-gold" />{text}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-card p-2 pl-4 focus-within:border-gold">
-                  <Sparkles size={18} className="shrink-0 text-gold" />
-                  <input placeholder="Ask AIVO anything about training or nutrition..." aria-label="Message" className="w-full bg-transparent py-2 text-sm outline-none placeholder:text-mute" />
-                  <button type="button" aria-label="Send" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold text-black transition hover:brightness-110"><Send size={16} /></button>
-                </div>
-                <p className="mt-2 text-center text-[11px] text-mute">AIVO can make mistakes. Check important health advice with a professional.</p>
-              </div>
+              <form onSubmit={(e) => { e.preventDefault(); submit(text) }} className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-white/15 bg-card p-2 pl-4 focus-within:border-gold">
+                <Sparkles size={18} className="shrink-0 text-gold" />
+                <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask AIVO anything about training or nutrition..." aria-label="Message" className="w-full bg-transparent py-2 text-sm outline-none placeholder:text-mute" />
+                <button type="submit" disabled={!text.trim() || busy} aria-label="Send" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"><Send size={16} /></button>
+              </form>
+              <p className="mt-2 text-center text-[11px] text-mute">AIVO can make mistakes. Check important health advice with a professional.</p>
             </footer>
           </section>
         </div>
