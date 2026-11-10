@@ -1,7 +1,10 @@
-import { useNavigate } from 'react-router-dom'
-import { Bell, User } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Menu } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
 import AskAivo from '../components/dashboard/AskAivo'
+import MenuDrawer from '../components/dashboard/MenuDrawer'
+import NotificationsBell from '../components/dashboard/NotificationsBell'
 import { BmiCard, FitnessSummary } from '../components/dashboard/Cards'
 import Suggestions from '../components/dashboard/Suggestions'
 import WeekCalendar from '../components/dashboard/WeekCalendar'
@@ -19,11 +22,17 @@ function userName() {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const root = useLocation().pathname.startsWith('/preview') ? '/preview' : '/app'
   const rec = recommend(getProfile())
-  const focus = todayFocus(loadPlans(), rec)
+  const plans = loadPlans()
+  const focus = todayFocus(plans, rec)
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuBtn = useRef(null)
+  const closeMenu = () => { setMenuOpen(false); menuBtn.current?.focus() }
   const logout = () => { clearSession(); navigate('/login', { replace: true }) }
+  const iconBtn = 'grid h-10 w-10 place-items-center rounded-xl transition hover:bg-white/5'
 
   return (
     <div className="min-h-screen bg-[#0d0d0d]">
@@ -31,12 +40,13 @@ export default function Dashboard() {
       <main className="min-h-screen bg-[#161616] px-5 pb-24 pt-8 sm:px-8 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-10">
         <header className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold sm:text-4xl">Welcome Maderpaker, {userName()}</h1>
+            <h1 className="text-3xl font-bold sm:text-4xl">Welcome, {userName()}</h1>
             <p className="mt-1 text-sm">{greeting}, start your day now.</p>
           </div>
-          <div className="flex items-center gap-5 text-gold">
-            <button type="button" aria-label="Notifications"><Bell size={26} /></button>
-            <button type="button" aria-label="Log out" title="Log out" onClick={logout}><User size={26} /></button>
+          <div className="flex items-center gap-1 text-gold">
+            <NotificationsBell rec={rec} focus={focus} plans={plans} root={root} onOpenMenu={() => setMenuOpen(true)} />
+            <button ref={menuBtn} type="button" aria-label="Open menu" aria-haspopup="dialog" aria-expanded={menuOpen} aria-controls="app-menu"
+              onClick={() => setMenuOpen(true)} className={iconBtn}><Menu size={28} /></button>
           </div>
         </header>
 
@@ -64,6 +74,8 @@ export default function Dashboard() {
           }} />
         </div>
       </main>
+
+      <MenuDrawer open={menuOpen} onClose={closeMenu} name={userName()} rec={rec} onLogout={logout} />
     </div>
   )
 }

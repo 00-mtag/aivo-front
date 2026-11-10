@@ -11,6 +11,7 @@ import AiPlanModal from '../components/workouts/AiPlanModal'
 import { ghostBtn, goldBtn } from '../components/workouts/Modal'
 import { GOALS, isActive, newPlan, normalizeWorkout, savePlans, uid, workoutBody } from '../lib/workouts'
 import { api, errorsFrom } from '../lib/api'
+import { logWorkout, syncWorkoutPlan } from '../lib/progress'
 
 const AI_SUGGESTIONS = ['Suggest a workout for muscle gain', 'How many calories should I eat?', 'Create a cardio plan']
 
@@ -77,7 +78,9 @@ export default function Workouts() {
     return () => { cancelled = true }
   }, [])
   useEffect(() => {
-    if (plansLoaded) savePlans(plans)
+    if (!plansLoaded) return
+    savePlans(plans)
+    syncWorkoutPlan(plans.filter((p) => isActive(p)))   // Progress: planned days + weekly goal
   }, [plans, plansLoaded])
 
   // Follow the screen size: open when it becomes desktop-wide, close when it shrinks to phone/tablet.
@@ -256,6 +259,17 @@ export default function Workouts() {
     }
   }
 
+  // Called by WorkoutSession when the user finishes a workout, so Progress counts it.
+  const completeSession = (summary = {}) => {
+    if (!sessionPlan || !session) return
+    const exercises = sessionPlan.schedule[session.day] ?? []
+    logWorkout({
+      name: sessionPlan.name,
+      minutes: Number(summary.minutes) || Number(sessionPlan.minutes) || 0,
+      exercises: exercises.map(({ name, sets, reps }) => ({ name, sets, reps })),
+    })
+  }
+
   return (
     <div className="min-h-screen bg-[#0d0d0d]">
       <Sidebar />
@@ -322,7 +336,7 @@ export default function Workouts() {
           onSave={saveExercise} onDelete={deleteExercise} onClose={() => setExModal(null)} />
       )}
       {calPlan && <CalendarModal plan={calPlan} onClose={() => setCalId(null)} />}
-      {sessionPlan && <WorkoutSession plan={sessionPlan} day={session.day} onClose={() => setSession(null)} />}
+      {sessionPlan && <WorkoutSession plan={sessionPlan} day={session.day} onComplete={completeSession} onClose={() => setSession(null)} />}
 
       <AskAivoFloating
         open={aiOpen}

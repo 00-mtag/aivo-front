@@ -1,5 +1,6 @@
 import { userKey } from './profile'
 
+
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 export const DAY_NAMES = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' }
 export const GOALS = ['Lose weight', 'Build muscle', 'Improve endurance', 'Maintain fitness']

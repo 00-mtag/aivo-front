@@ -5,6 +5,8 @@ import WheelPicker from '../components/onboarding/WheelPicker'
 import logo from '../assets/logo.png'
 import { api, errorsFrom } from '../lib/api'
 import { calculateTdee, saveProfile } from '../lib/profile'
+import { recommend } from '../lib/recommend'
+import { logWeight, setTargets } from '../lib/progress'
 
 const GENDERS = ['Male', 'Female', 'Prefer not to say']
 const GOALS = ['Lose weight', 'Build muscle', 'Improve endurance', 'Maintain fitness']
@@ -184,7 +186,14 @@ export default function Onboarding() {
 
     try {
       const { data } = await api.post('/profile', form)
-      saveProfile({ ...profile, tdee: Number(data.profile.tdee) })
+      const saved = { ...profile, tdee: Number(data.profile.tdee) }
+      saveProfile(saved)
+      try {
+        // Progress: starting weight and daily targets. Never block finishing setup.
+        const rec = recommend(saved)
+        setTargets({ calories: rec?.calories, protein: rec?.protein })
+        logWeight(saved.weightKg)
+      } catch { /* progress is optional */ }
       navigate('/app', { replace: true })
     } catch (error) {
       const { fields, form: message } = errorsFrom(error)

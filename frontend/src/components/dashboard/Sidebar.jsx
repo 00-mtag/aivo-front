@@ -1,10 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Bot, Dumbbell, Home, Settings, UtensilsCrossed } from 'lucide-react'
+import { Bot, Dumbbell, Home, TrendingUp, UtensilsCrossed } from 'lucide-react'
 import logo from '../../assets/logo.png'
 
 const base = 'grid h-11 w-11 place-items-center rounded-xl transition'
 const link = ({ isActive }) => `${base} ${isActive ? 'bg-gold/15 text-gold' : 'text-gold/80 hover:bg-white/5 hover:text-gold'}`
-const soon = `${base} cursor-not-allowed text-gold/40`
 
 export default function Sidebar() {
   // The dev-only /preview pages keep their own links so they work without logging in.
@@ -17,9 +16,9 @@ export default function Sidebar() {
         <NavLink to={root} end aria-label="Home" title="Home" className={link}><Home size={26} /></NavLink>
         <NavLink to={`${root}/workouts`} aria-label="Workouts" title="Workouts" className={link}><Dumbbell size={26} /></NavLink>
         <NavLink to={`${root}/nutrition`} aria-label="Meal plan" title="Meal plan" className={link}><UtensilsCrossed size={26} /></NavLink>
+        <NavLink to={`${root}/progress`} aria-label="Progress" title="Progress" className={link}><TrendingUp size={26} /></NavLink>
         <NavLink to={`${root}/ai-coach`} aria-label="AI Coach" title="AI Coach" className={link}><Bot size={26} /></NavLink>
       </nav>
-      <button type="button" aria-label="Settings (coming soon)" title="Settings: coming soon" className={soon}><Settings size={26} /></button>
     </aside>
   )
 }

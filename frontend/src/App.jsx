@@ -8,6 +8,7 @@ import Nutrition from './pages/Nutrition'
 import AiCoach from './pages/AiCoach'
 import { isLoggedIn } from './lib/api'
 import { hasProfile } from './lib/profile'
+import Progress from './pages/Progress'
 
 // Logged in but no profile yet -> onboarding comes first; once done, go to the dashboard.
 const Protected = ({ children }) => {
@@ -30,6 +31,7 @@ export default function App() {
       <Route path="/app/workouts" element={<Protected><Workouts /></Protected>} />
       <Route path="/app/nutrition" element={<Protected><Nutrition /></Protected>} />
       <Route path="/app/ai-coach" element={<Protected><AiCoach /></Protected>} />
+      <Route path="/app/progress" element={<Protected><Progress /></Protected>}/>
       {/* Dev-only previews: no login needed. Not included in production builds. */}
       {import.meta.env.DEV && <Route path="/preview" element={<Dashboard />} />}
       {import.meta.env.DEV && <Route path="/preview/workouts" element={<Workouts />} />}

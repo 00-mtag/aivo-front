@@ -9,6 +9,7 @@ import { goldBtn } from '../components/workouts/Modal'
 import { getProfile } from '../lib/profile'
 import { recommend } from '../lib/recommend'
 import useNutrition from '../lib/useNutrition'
+import { setTargets, syncMeals } from '../lib/progress'
 import { MEAL_TYPES, dayTotals, fromYmd, mealTotals, toYmd, weekDates } from '../lib/nutrition'
 
 const AI_SUGGESTIONS = ['Calculate my calorie and macro goals', 'Suggest a high-protein meal', 'How should I fuel endurance training?']
@@ -52,6 +53,29 @@ export default function Nutrition() {
   const remaining = calGoal - totals.calories
   const mealOf = (type) => meals.find((m) => m.meal_date === selected && m.meal_type === type)
   const hasMeals = (ymd) => meals.some((m) => m.meal_date === ymd && m.items.length)
+
+  // Mirror the meal plan into Progress so its numbers always match this page.
+  useEffect(() => {
+    if (status === 'loading') return
+    const byId = Object.fromEntries(foods.map((x) => [x.food_id, x]))
+    syncMeals(
+      meals.flatMap((meal) => meal.items.map((item, i) => ({
+        id: String(item.meal_item_id ?? `${meal.meal_date}-${meal.meal_type}-${i}`),
+        date: meal.meal_date,
+        type: meal.meal_type,
+        name: byId[item.food_id]?.name ?? item.food_name ?? 'Food',
+        calories: item.calories,
+        protein: item.protein,
+        carbs: item.carbohydrates,
+        fat: item.fat,
+      }))),
+      [...weekDates(weekOffset).map(toYmd), ...meals.map((meal) => meal.meal_date)],
+    )
+  }, [meals, foods, status, weekOffset])
+  useEffect(() => {
+    if (status === 'loading') return
+    setTargets({ calories: calGoal, protein: goal.daily_protein })
+  }, [status, calGoal, goal.daily_protein])
 
   const changeWeek = (delta) => {
     const idx = Math.max(0, dates.findIndex((d) => toYmd(d) === selected))
