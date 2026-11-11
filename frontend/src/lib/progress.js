@@ -2,14 +2,13 @@
 // Workouts and Nutrition pages WRITE through the helpers below (logWorkout, logMeal, ...).
 // The Progress page READS through useProgress(). Both stay in sync automatically.
 
-
 const KEYS = {
-  profile: 'aivo:profile',
-  workoutPlan: 'aivo:workoutPlan',
-  workoutLog: 'aivo:workoutLog',
-  mealLog: 'aivo:mealLog',
-  waterLog: 'aivo:waterLog',
-  weightLog: 'aivo:weightLog',
+  profile: 'aivo:progress:profile',
+  workoutPlan: 'aivo:progress:workoutPlan',
+  workoutLog: 'aivo:progress:workoutLog',
+  mealLog: 'aivo:progress:mealLog',
+  waterLog: 'aivo:progress:waterLog',
+  weightLog: 'aivo:progress:weightLog',
 }
 export const PROGRESS_EVENT = 'aivo:progress-update'
 
@@ -25,17 +24,25 @@ const write = (key, value) => {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage full or blocked */ }
   window.dispatchEvent(new Event(PROGRESS_EVENT))
 }
+const writeIfChanged = (key, value) => {
+  if (JSON.stringify(read(key, null)) === JSON.stringify(value)) return
+  write(key, value)
+}
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-const append = (key, entry) => { write(key, [...read(key, []), entry]); return entry }
+const append = (key, entry) => { write(key, [...list(key), entry]); return entry }
 
-export const readAll = () => ({
-  profile: read(KEYS.profile, {}),
-  workoutPlan: read(KEYS.workoutPlan, []),
-  workoutLog: read(KEYS.workoutLog, []),
-  mealLog: read(KEYS.mealLog, []),
-  waterLog: read(KEYS.waterLog, []),
-  weightLog: read(KEYS.weightLog, []),
-})
+const list = (key) => { const v = read(key, []); return Array.isArray(v) ? v : [] }
+export const readAll = () => {
+  const profile = read(KEYS.profile, {})
+  return {
+    profile: profile && typeof profile === 'object' && !Array.isArray(profile) ? profile : {},
+    workoutPlan: list(KEYS.workoutPlan),
+    workoutLog: list(KEYS.workoutLog),
+    mealLog: list(KEYS.mealLog),
+    waterLog: list(KEYS.waterLog),
+    weightLog: list(KEYS.weightLog),
+  }
+}
 
 /* ---------- dates ---------- */
 const pad = n => String(n).padStart(2, '0')
@@ -62,18 +69,59 @@ export const logWater = (liters, date = todayKey()) =>
   append(KEYS.waterLog, { id: uid(), date, liters: Number(liters) || 0 })
 
 export const logWeight = (kg, date = todayKey()) =>
-  write(KEYS.weightLog, [...read(KEYS.weightLog, []).filter(w => w.date !== date), { date, kg: Number(kg) }])
+  write(KEYS.weightLog, [...list(KEYS.weightLog).filter(w => w.date !== date), { date, kg: Number(kg) }])
 
 // setWorkoutPlan([{ day: 0, name: 'Full body A' }, { day: 2, name: 'Cardio' }])  day: 0 = Mon ... 6 = Sun
 export const setWorkoutPlan = plan => write(KEYS.workoutPlan, plan)
 
 // setTargets({ calories: 1960, protein: 134, water: 2.9, workoutsPerWeek: 3 })
-export const setTargets = targets =>
-  write(KEYS.profile, { ...read(KEYS.profile, {}), targets: { ...DEFAULT_TARGETS, ...targets } })
+// Merges into the saved targets. Missing or invalid values are ignored.
+export const setTargets = (targets) => {
+  const clean = Object.fromEntries(
+    Object.entries(targets).map(([k, v]) => [k, Number(v)]).filter(([, v]) => Number.isFinite(v) && v > 0))
+  const profile = read(KEYS.profile, {})
+  writeIfChanged(KEYS.profile, { ...profile, targets: { ...DEFAULT_TARGETS, ...(profile.targets || {}), ...clean } })
+}
+
+// Mirrors the meal plan from the Nutrition page. Replaces only the dates in coveredDates,
+// so removed or edited items disappear and other weeks are left alone.
+export const syncMeals = (entries, coveredDates = []) => {
+  const covered = new Set(coveredDates)
+  const kept = list(KEYS.mealLog).filter((m) => !covered.has(m.date))
+  const num = (v) => Number(v) || 0
+  writeIfChanged(KEYS.mealLog, [...kept, ...entries.map((e) => ({
+    id: e.id, date: e.date, type: e.type, name: e.name,
+    calories: num(e.calories), protein: num(e.protein), carbs: num(e.carbs), fat: num(e.fat),
+  }))])
+}
+
+// Turns a plan's day key into 0 = Mon ... 6 = Sun. Accepts 'Monday', 'Mon', 'monday' or 0-6.
+// If your schedule uses numbers where 0 = Sunday, change the numeric branch.
+const DAY_NAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+export const dayIndex = (key) => {
+  if (typeof key === 'string') {
+    const i = DAY_NAMES.indexOf(key.trim().slice(0, 3).toLowerCase())
+    if (i >= 0) return i
+  }
+  const n = Number(key)
+  return Number.isInteger(n) && n >= 0 && n <= 6 ? n : -1
+}
+
+// Mirrors the active workout plans from the Workouts page and sets the weekly workout goal.
+export const syncWorkoutPlan = (plans) => {
+  const byDay = new Map()
+  plans.forEach((p) => Object.entries(p.schedule || {}).forEach(([day, exercises]) => {
+    const i = dayIndex(day)
+    if (i >= 0 && exercises?.length && !byDay.has(i)) byDay.set(i, { day: i, name: p.name })
+  }))
+  const plan = [...byDay.values()].sort((a, b) => a.day - b.day)
+  writeIfChanged(KEYS.workoutPlan, plan)
+  if (plan.length) setTargets({ workoutsPerWeek: plan.length })
+}
 
 export const removeEntry = (kind, id) => {
   const key = { workout: KEYS.workoutLog, meal: KEYS.mealLog, water: KEYS.waterLog }[kind]
-  if (key) write(key, read(key, []).filter(e => e.id !== id))
+  if (key) write(key, list(key).filter(e => e.id !== id))
 }
 
 export const clearProgress = () => {
@@ -126,7 +174,7 @@ export function buildProgress(raw, weekOffset = 0) {
     const plan = raw.workoutPlan.find(p => p.day === i)
     const isToday = key === today, isFuture = key > today
     return {
-      key, label, shortDate: short(date), isToday, isFuture, plan,
+      key, label, date, shortDate: short(date), isToday, isFuture, plan,
       status: workouts.length ? 'done' : plan ? (isToday || isFuture ? 'todo' : 'missed') : 'rest',
       workouts, meals,
       minutes: sum(workouts, w => w.minutes),
