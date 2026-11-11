@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
@@ -9,12 +9,16 @@ import { BmiCard, FitnessSummary } from '../components/dashboard/Cards'
 import Suggestions from '../components/dashboard/Suggestions'
 import WeekCalendar from '../components/dashboard/WeekCalendar'
 import { clearSession } from '../lib/api'
-import { getProfile } from '../lib/profile'
+import { getProfile, saveProfile } from '../lib/profile'
 import { recommend, todayFocus } from '../lib/recommend'
 import { loadPlans } from '../lib/workouts'
+import LoadingScreen from '../components/LoadingScreen'
+import usePanelLoader, { resetPanelLoaders } from '../lib/usePanelLoader'
 
 function userName() {
   try {
+    const profileName = getProfile()?.name          // a name edited in the menu wins
+    if (profileName) return profileName
     const u = JSON.parse(localStorage.getItem('aivo_user') ?? 'null')
     return u?.username ?? u?.name ?? 'there'
   } catch { return 'there' }
@@ -22,16 +26,26 @@ function userName() {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const root = useLocation().pathname.startsWith('/preview') ? '/preview' : '/app'
+  const [loading, finishLoading] = usePanelLoader('dashboard')
+  const { pathname, key } = useLocation()
+  const root = pathname.startsWith('/preview') ? '/preview' : '/app'
+  // Always open at the top: on arrival, and when Home is clicked again while already here (each click gets a new location key)
+  useLayoutEffect(() => { window.scrollTo(0, 0) }, [key])
   const rec = recommend(getProfile())
   const plans = loadPlans()
   const focus = todayFocus(plans, rec)
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
   const [menuOpen, setMenuOpen] = useState(false)
+  const [, refresh] = useState(0)   // re-reads the profile after it is edited in the menu
   const menuBtn = useRef(null)
+  const onLoaded = () => { finishLoading(); window.scrollTo(0, 0) }   // widgets that scroll themselves into view while loading cannot leave the page halfway down
   const closeMenu = () => { setMenuOpen(false); menuBtn.current?.focus() }
-  const logout = () => { clearSession(); navigate('/login', { replace: true }) }
+  const saveProfileValues = (values) => {
+    saveProfile({ ...(getProfile() ?? {}), ...values })   // keep the onboarding answers, change only what was edited
+    refresh((n) => n + 1)
+  }
+  const logout = () => { clearSession(); resetPanelLoaders(); navigate('/login', { replace: true }) }
   const iconBtn = 'grid h-10 w-10 place-items-center rounded-xl transition hover:bg-white/5'
 
   return (
@@ -75,7 +89,9 @@ export default function Dashboard() {
         </div>
       </main>
 
-      <MenuDrawer open={menuOpen} onClose={closeMenu} name={userName()} rec={rec} onLogout={logout} />
+      <MenuDrawer open={menuOpen} onClose={closeMenu} name={userName()} rec={rec} onLogout={logout}
+        profile={getProfile()} onSaveProfile={saveProfileValues} />
+      {loading && <LoadingScreen message="Loading your dashboard" onDone={onLoaded} />}
     </div>
   )
 }

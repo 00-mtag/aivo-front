@@ -6,6 +6,8 @@ import PasswordStrength from '../components/PasswordStrength'
 import Button from '../components/Button'
 import GoogleButton from '../components/GoogleButton'
 import { errorsFrom, registerRequest, saveSession } from '../lib/api'
+import LoadingScreen from '../components/LoadingScreen'
+import { markPanelLoaded } from '../lib/usePanelLoader'
 
 export default function Register() {
   const navigate = useNavigate()
@@ -14,6 +16,7 @@ export default function Register() {
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [signedIn, setSignedIn] = useState(false)
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const submit = async (e) => {
@@ -27,7 +30,7 @@ export default function Register() {
     setBusy(true)
     try {
       const { data } = await registerRequest({ ...form, username: form.username.trim(), email: form.email.trim() })
-      if (data?.token ?? data?.access_token) { saveSession(data); navigate('/app', { replace: true }) }
+      if (data?.token ?? data?.access_token) { saveSession(data); markPanelLoaded('dashboard'); setSignedIn(true) }
       else navigate('/login', { replace: true, state: { registered: true } })
     } catch (err) {
       const r = errorsFrom(err)
@@ -67,6 +70,7 @@ export default function Register() {
       <p className="mt-6 text-center text-sm">
         Already have an account? <Link to="/login" className="font-bold text-gold hover:underline">Sign in</Link>
       </p>
+      {signedIn && <LoadingScreen message="Creating your account" onDone={() => navigate('/app', { replace: true })} />}
     </AuthLayout>
   )
 }

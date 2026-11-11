@@ -5,6 +5,8 @@ import TextField from '../components/TextField'
 import Button from '../components/Button'
 import GoogleButton from '../components/GoogleButton'
 import { errorsFrom, loginRequest, saveSession } from '../lib/api'
+import LoadingScreen from '../components/LoadingScreen'
+import { markPanelLoaded } from '../lib/usePanelLoader'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -15,6 +17,7 @@ export default function Login() {
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState(location.state?.registered ? 'Account created. Sign in to continue.' : '')
   const [busy, setBusy] = useState(false)
+  const [signedIn, setSignedIn] = useState(false)
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const submit = async (e) => {
@@ -28,7 +31,8 @@ export default function Login() {
     try {
       const { data } = await loginRequest({ email: form.email.trim(), password: form.password })
       saveSession(data)
-      navigate('/app', { replace: true })
+      markPanelLoaded('dashboard') // this screen already loaded it
+      setSignedIn(true)
     } catch (err) {
       const r = errorsFrom(err)
       setErrors(r.fields); setFormError(r.form)
@@ -71,6 +75,7 @@ export default function Login() {
       <p className="mt-6 text-center text-sm">
         New to AIVO? <Link to="/register" className="font-bold text-gold hover:underline">Create an account</Link>
       </p>
+      {signedIn && <LoadingScreen message="Signing you in" onDone={() => navigate('/app', { replace: true })} />}
     </AuthLayout>
   )
 }
