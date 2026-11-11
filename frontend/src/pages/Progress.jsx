@@ -15,7 +15,7 @@ export default function Progress() {
   const root = useLocation().pathname.startsWith('/preview') ? '/preview' : '/app'
   const [offset, setOffset] = useState(0)
   const [detail, setDetail] = useState(null) // null | 'workouts' | 'food' | 'water'
-  const p = useProgress(offset)
+  const p = useProgress(offset, root === '/preview')
 
   // 'loading' | 'error' | 'ready'. Uses p.status if the hook provides it, otherwise p.loading / p.error.
   const status = p.status ?? (p.loading ? 'loading' : p.error ? 'error' : 'ready')
@@ -43,7 +43,7 @@ export default function Progress() {
         </p>
       ) : status === 'error' ? (
         <div role="alert" className="mt-10 text-sm">
-          <p className="text-mute">We could not load your progress.</p>
+          <p className="text-mute">We could not load your progress. {p.errorMessage}</p>
           {typeof p.reload === 'function' && (
             <button type="button" onClick={p.reload} className="mt-3 rounded-full border border-gold/60 px-4 py-2 text-xs font-semibold text-gold transition hover:bg-gold/10">Try again</button>
           )}
@@ -64,10 +64,11 @@ export default function Progress() {
             <div className="lg:col-span-5"><WeekCard progress={p} onOpen={() => setDetail('workouts')} /></div>
             <Insights progress={p} />
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:col-span-12">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:col-span-12 lg:grid-cols-5">
               <StatTile icon={CalendarCheck} label="Day streak" value={`${p.streak} day${p.streak === 1 ? '' : 's'}`} note="Workout or meal logged" />
               <StatTile icon={Dumbbell} label="Active time" value={`${p.totals.minutes} min`} note="This week" />
               <StatTile icon={Flame} label="Avg. calories" value={p.totals.foodDays ? `${fmt(p.totals.avgCalories)} kcal` : '--'} note={`Goal ${fmt(p.targets.calories)} kcal`} />
+              <StatTile icon={Flame} label="Calories burned" value={`${fmt(p.totals.caloriesBurned)} kcal`} note="This week" />
               <StatTile icon={WeightIcon} label="Weight change" value={`${p.weight.change > 0 ? '+' : ''}${p.weight.change} kg`} note="Since you started" />
             </div>
 

@@ -8,10 +8,12 @@ import NotificationsBell from '../components/dashboard/NotificationsBell'
 import { BmiCard, FitnessSummary } from '../components/dashboard/Cards'
 import Suggestions from '../components/dashboard/Suggestions'
 import WeekCalendar from '../components/dashboard/WeekCalendar'
-import { clearSession } from '../lib/api'
-import { getProfile, saveProfile } from '../lib/profile'
+import { api, clearSession, errorsFrom } from '../lib/api'
+import { calculateProfileTdee, getProfile, recommendedDailyCalories, saveProfile } from '../lib/profile'
 import { recommend, todayFocus } from '../lib/recommend'
 import { loadPlans } from '../lib/workouts'
+import { defaultGoal, loadNutrition, saveNutrition } from '../lib/nutrition'
+import { normGoal, pickGoal, saveGoal as saveNutritionGoal } from '../lib/nutritionApi'
 import LoadingScreen from '../components/LoadingScreen'
 import usePanelLoader, { resetPanelLoaders } from '../lib/usePanelLoader'
 
@@ -41,8 +43,50 @@ export default function Dashboard() {
   const menuBtn = useRef(null)
   const onLoaded = () => { finishLoading(); window.scrollTo(0, 0) }   // widgets that scroll themselves into view while loading cannot leave the page halfway down
   const closeMenu = () => { setMenuOpen(false); menuBtn.current?.focus() }
-  const saveProfileValues = (values) => {
-    saveProfile({ ...(getProfile() ?? {}), ...values })   // keep the onboarding answers, change only what was edited
+  const saveProfileValues = async (values) => {
+    const previousProfile = getProfile() ?? {}
+    const updatedProfile = { ...previousProfile, ...values }
+    let serverTdee = null
+    if (!pathname.startsWith('/preview')) {
+      try {
+        const { data } = await api.put('/profile', {
+          gender: values.gender === 'Other' ? 'Prefer not to say' : values.gender,
+          phone_number: values.phone,
+          birth_date: values.birthDate,
+          height: String(values.heightCm),
+          weight: String(values.weightKg),
+          activity_level: values.activityLevel,
+          fitness_goal: values.goal ?? values.fitnessGoal,
+          experience_level: values.level ?? values.experience ?? values.experienceLevel,
+          target_weight: values.targetWeightKg == null ? null : String(values.targetWeightKg),
+        })
+        serverTdee = data.profile?.tdee == null ? null : Number(data.profile.tdee)
+      } catch (error) {
+        throw new Error(errorsFrom(error).form || 'Your profile could not be saved to the server.', { cause: error })
+      }
+    }
+    const tdee = serverTdee ?? calculateProfileTdee(updatedProfile)
+    if (tdee !== null) updatedProfile.tdee = tdee
+    const previousTarget = recommendedDailyCalories(previousProfile)
+    const updatedTarget = recommendedDailyCalories(updatedProfile)
+    saveProfile(updatedProfile)   // keep the onboarding answers, change only what was edited
+    if (updatedTarget !== null && updatedTarget !== previousTarget) {
+      const updatedRecommendation = recommend(updatedProfile)
+      const updatedGoal = {
+        ...defaultGoal({ ...updatedRecommendation, calories: updatedTarget }),
+        goal_id: loadNutrition(updatedRecommendation).goal?.goal_id,
+      }
+      const localNutrition = loadNutrition(updatedRecommendation)
+      saveNutrition({ ...localNutrition, goal: updatedGoal })
+
+      try {
+        const { data } = await api.get('/nutrition/goals')
+        const currentGoal = pickGoal((data.nutrition_goals ?? []).map(normGoal))
+        await saveNutritionGoal({ ...updatedGoal, goal_id: currentGoal?.goal_id })
+      } catch (error) {
+        throw new Error(`Your profile was saved, but the daily calorie goal could not be synced: ${error.message}`, { cause: error })
+      }
+    }
     refresh((n) => n + 1)
   }
   const logout = () => { clearSession(); resetPanelLoaders(); navigate('/login', { replace: true }) }

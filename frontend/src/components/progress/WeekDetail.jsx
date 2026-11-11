@@ -38,7 +38,10 @@ export default function WeekDetail({ progress, tab, onTab, onClose, root }) {
   const { days, totals, targets, range } = progress
   const closeRef = useRef(null)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     const prev = document.body.style.overflow
@@ -75,19 +78,21 @@ export default function WeekDetail({ progress, tab, onTab, onClose, root }) {
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4 pt-1 sm:px-5 sm:pb-5">
           {tab === 'workouts' && (<>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Mini label="Completed" value={`${totals.workoutsDone}/${targets.workoutsPerWeek}`} />
               <Mini label="Active minutes" value={totals.minutes} />
+              <Mini label="Calories burned" value={fmt(totals.caloriesBurned)} />
               <Mini label="Planned days" value={days.filter(d => d.plan).length} />
             </div>
             {workoutDays.length === 0
               ? <Empty text="No workouts completed this week yet." to={`${root}/workouts`} cta="Go to Workouts" />
               : workoutDays.map(d => (
-                <DayBox key={d.key} day={d} right={d.status === 'missed' ? <Chip tone="red">Missed</Chip> : <Chip>{d.minutes} min</Chip>}>
+                <DayBox key={d.key} day={d} right={d.status === 'missed' ? <Chip tone="red">Missed</Chip> : <Chip>{d.minutes} min · {fmt(d.caloriesBurned)} kcal</Chip>}>
                   {d.status === 'missed' && <p className="text-xs text-white/50">{d.plan?.name || 'Workout'} was planned but not completed.</p>}
                   {d.workouts.map(w => (
                     <div key={w.id} className="mt-1">
                       <p className="text-sm text-white">{w.name}</p>
+                      <p className="text-xs text-white/50">{w.exercisesDone} completed, {w.exercisesSkipped} skipped</p>
                       {w.exercises?.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {w.exercises.map((e, i) => <span key={i} className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-white/70">{e.name}{e.sets ? ` ${e.sets}×${e.reps}` : ''}</span>)}

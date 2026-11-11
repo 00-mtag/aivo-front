@@ -112,7 +112,11 @@ export default function Workouts() {
           goal: exerciseGoal,
           exercises: data.exercises
             .filter(({ exercise_id, name }) => Number.isInteger(Number(exercise_id)) && typeof name === 'string')
-            .map(({ exercise_id, name }) => ({ id: Number(exercise_id), name })),
+            .map(({ exercise_id, name, weightORduration }) => ({
+              id: Number(exercise_id),
+              name,
+              weightORduration: weightORduration === 'duration' ? 'duration' : 'weight',
+            })),
           error: '',
         })
       })
@@ -168,7 +172,9 @@ export default function Workouts() {
         muscle: exercise.muscle || '',
         notes: exercise.notes || '',
         rest_seconds: exercise.rest_seconds ?? '',
-        weight: '',
+        weight: exercise.weightORduration === 'weight' ? exercise.weight ?? '' : '',
+        duration: exercise.weightORduration === 'duration' ? exercise.duration ?? '' : '',
+        weightORduration: exercise.weightORduration === 'duration' ? 'duration' : 'weight',
       })
     }
 
@@ -314,6 +320,7 @@ export default function Workouts() {
       {exModal && exPlan && (
         <ExerciseModal key={exModal.exercise?.id ?? 'new'} exercise={exModal.exercise} startEditing={exModal.edit}
           exerciseNames={exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.exercises.map(({ name }) => name) : []}
+          exerciseCatalog={exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.exercises : []}
           exerciseGoal={exerciseGoal}
           exerciseNamesLoading={Boolean(exerciseGoal && exerciseCatalog.goal !== exerciseGoal)}
           exerciseNamesError={!exerciseGoal

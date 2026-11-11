@@ -35,6 +35,8 @@ export function normalizeWorkout(workout) {
       muscle: item.muscle ?? item.catalog_muscle_group ?? MUSCLES[0],
       notes: item.notes ?? '',
       weight: item.weight ?? '',
+      duration: item.duration ?? '',
+      weightORduration: item.weightORduration ?? 'weight',
       rest_seconds: item.rest_seconds ?? '',
     })
   }
@@ -69,6 +71,7 @@ export function workoutBody(plan) {
       sets: String(exercise.sets),
       reps: String(exercise.reps),
       weight: exercise.weight || null,
+      duration: exercise.duration || null,
       rest_seconds: exercise.rest_seconds ? String(exercise.rest_seconds) : null,
       notes: exercise.notes || null,
       muscle: exercise.muscle || null,

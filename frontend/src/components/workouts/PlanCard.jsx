@@ -6,7 +6,12 @@ import { ghostBtn, goldBtn } from './Modal'
 const SHOWN = 3
 const TODAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()]
 const ICON = { Legs: Footprints, Core: Activity, Cardio: Flame, 'Full body': Zap }
-const repsLabel = (e) => (timedSeconds(e.reps) != null ? e.reps : `${e.reps} reps`)
+const repsLabel = (e) => {
+  const target = e.duration
+    ? `${e.duration}${/\D/.test(e.duration) ? '' : ' sec'}`
+    : timedSeconds(e.reps) != null ? e.reps : `${e.reps} reps`
+  return e.weight ? `${target} · ${e.weight}` : target
+}
 
 const Thumb = ({ muscle }) => {
   const Icon = ICON[muscle] ?? Dumbbell

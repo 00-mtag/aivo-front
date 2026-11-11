@@ -6,7 +6,7 @@ import AddFoodModal, { Stepper } from '../components/nutrition/AddFoodModal'
 import GoalModal from '../components/nutrition/GoalModal'
 import AiWeekPlanModal from '../components/nutrition/AiWeekPlanModal'
 import { goldBtn } from '../components/workouts/Modal'
-import { getProfile } from '../lib/profile'
+import { getProfile, recommendedDailyCalories } from '../lib/profile'
 import { recommend } from '../lib/recommend'
 import useNutrition from '../lib/useNutrition'
 import { MEAL_TYPES, dayTotals, fromYmd, mealTotals, toYmd, weekDates } from '../lib/nutrition'
@@ -49,7 +49,10 @@ export default function Nutrition() {
   const dates = weekDates(weekOffset)
   const todayYmd = toYmd(new Date())
   const totals = dayTotals(meals, selected)
-  const calGoal = goal.daily_calories || rec.calories
+  const profile = getProfile()
+  const goalAdjustment = { 'Lose weight': -500, 'Build muscle': 300, 'Improve endurance': 100, 'Maintain fitness': 0 }[rec.goal] ?? 0
+  const recommendedCalories = recommendedDailyCalories(profile) ?? (rec.calories - goalAdjustment)
+  const calGoal = goal.daily_calories || recommendedCalories
   const remaining = calGoal - totals.calories
   const mealOf = (type) => meals.find((m) => m.meal_date === selected && m.meal_type === type)
   const hasMeals = (ymd) => meals.some((m) => m.meal_date === ymd && m.items.length)
@@ -76,13 +79,7 @@ export default function Nutrition() {
     }
   }
 
-  const calorieOptions = [1800, 1900, 2000, 2100, 2200, 2300]
-  const calorieAdjustments = { 'Lose weight': -500, 'Build muscle': 300, 'Improve endurance': 100, 'Maintain fitness': 0 }
-  const tdee = Number(getProfile()?.tdee) || rec.calories
-  const defaultCalories = calorieOptions.reduce((closest, option) =>
-    Math.abs(option - (tdee + (calorieAdjustments[rec.goal] ?? 0)))
-      < Math.abs(closest - (tdee + (calorieAdjustments[rec.goal] ?? 0))) ? option : closest,
-  calorieOptions[0])
+  const defaultCalories = recommendedCalories
   const dateLabel = fromYmd(selected).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
   const weekLabel = `${dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${dates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
 
@@ -214,7 +211,8 @@ export default function Nutrition() {
           onReset={() => { nu.resetGoal(); setGoalOpen(false) }} />
       )}
       {aiPlanOpen && (
-        <AiWeekPlanModal defaultCalories={defaultCalories} startDate={toYmd(dates[0])} goal={rec.goal} gender={getProfile()?.gender}
+        <AiWeekPlanModal defaultCalories={defaultCalories} macroTargets={goal}
+          startDate={toYmd(dates[0])} goal={rec.goal} gender={profile?.gender}
           beforeGenerate={confirmReplaceWeek}
           onSave={saveGeneratedWeek}
           onClose={() => { if (!aiPlanSaving) setAiPlanOpen(false) }} />

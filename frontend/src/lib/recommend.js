@@ -59,7 +59,16 @@ function ageOf(birthDate) {
 
 // All numbers are rough estimates (Mifflin-St Jeor for calories) from the onboarding answers.
 export function recommend(raw) {
-  const p = { ...DEFAULT_PROFILE, ...Object.fromEntries(Object.entries(raw ?? {}).filter(([, v]) => v != null && v !== '')) }
+  const source = raw ?? {}
+  const normalized = {
+    ...source,
+    birthDate: source.birthDate ?? source.birthday ?? source.birthdate ?? source.birth_date ?? source.dob,
+    heightCm: source.heightCm ?? source.height_cm ?? source.height,
+    weightKg: source.weightKg ?? source.weight_kg ?? source.weight,
+    goal: source.goal ?? source.fitnessGoal,
+    experience: source.experience ?? source.level ?? source.experienceLevel,
+  }
+  const p = { ...DEFAULT_PROFILE, ...Object.fromEntries(Object.entries(normalized).filter(([, v]) => v != null && v !== '')) }
   const goal = WORKOUTS[p.goal] ? p.goal : 'Maintain fitness'
   const lv = LV[p.experience] ?? 0
   const kg = Number(p.weightKg), cm = Number(p.heightCm)

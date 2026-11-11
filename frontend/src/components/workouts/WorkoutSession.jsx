@@ -3,6 +3,7 @@ import { Check, ChevronLeft, Minus, Pause, Play, Plus, RotateCcw, SkipForward, T
 import { DAY_NAMES, timedSeconds } from '../../lib/workouts'
 import { api, errorsFrom } from '../../lib/api'
 import { goldBtn } from './Modal'
+import { getProfile } from '../../lib/profile'
 
 const REST_TIMED = 30   // seconds of rest after a timed set
 const REST_REPS = 60    // seconds of rest after a sets-and-reps set
@@ -146,7 +147,16 @@ export default function WorkoutSession({ plan, day, onClose }) {
   const [savingRecord, setSavingRecord] = useState(false)
   const [recordError, setRecordError] = useState('')
   const [pendingRecord, setPendingRecord] = useState(null)
+  const [calorieRecords, setCalorieRecords] = useState([])
+  const [totalCaloriesBurned, setTotalCaloriesBurned] = useState(0)
+  const [needsBodyWeight, setNeedsBodyWeight] = useState(false)
+  const [bodyWeightKg, setBodyWeightKg] = useState(() => {
+    const weight = Number(getProfile()?.weightKg)
+    return Number.isFinite(weight) && weight >= 20 && weight <= 350 ? String(weight) : ''
+  })
   const startedAt = useRef(Date.now())
+  const exerciseStartedAt = useRef(null)
+  const exerciseDurations = useRef({})
 
   useEffect(() => {
     if (finished) return
@@ -154,6 +164,7 @@ export default function WorkoutSession({ plan, day, onClose }) {
     return () => clearInterval(id)
   }, [finished])
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = '' } }, [])
+  useEffect(() => { exerciseStartedAt.current = Date.now() }, [i])
 
   const exit = () => { if (finished || window.confirm('End this workout? Your progress will not be saved.')) onClose() }
   const goTo = (n) => { setResting(false); setI(n) }
@@ -161,12 +172,16 @@ export default function WorkoutSession({ plan, day, onClose }) {
     setSavingRecord(true)
     setRecordError('')
     try {
-      await api.post('/progress/workouts', record)
+      const { data } = await api.post('/progress/workouts', record)
+      setCalorieRecords(data.calorie_burned_records ?? [])
+      setTotalCaloriesBurned(Number(data.total_calories_burned) || 0)
       setPendingRecord(null)
       setFinished(true)
     } catch (error) {
       setPendingRecord(record)
-      setRecordError(errorsFrom(error).form)
+      setNeedsBodyWeight(Boolean(error.response?.data?.errors?.body_weight_kg))
+      const errors = errorsFrom(error)
+      setRecordError(errors.form || errors.fields.body_weight_kg || 'Please check the workout details and try again.')
     } finally {
       setSavingRecord(false)
     }
@@ -174,16 +189,27 @@ export default function WorkoutSession({ plan, day, onClose }) {
   const mark = (value) => {
     const nextStatus = { ...status, [list[i].id]: value }
     setStatus(nextStatus)
+    const exerciseId = list[i].id
+    const secondsSpent = Math.max(1, Math.ceil((Date.now() - (exerciseStartedAt.current ?? Date.now())) / 1000))
+    exerciseDurations.current[exerciseId] = (exerciseDurations.current[exerciseId] ?? 0) + secondsSpent
     if (i === list.length - 1) {
       setResting(false)
       const duration = Math.floor((Date.now() - startedAt.current) / 1000)
       setElapsed(duration)
+      const exerciseDurationsPayload = list
+        .filter((exercise) => exerciseDurations.current[exercise.id] > 0)
+        .map((exercise) => ({
+          workout_exercise_id: Number(exercise.id),
+          duration_seconds: exerciseDurations.current[exercise.id],
+        }))
       void saveCompletion({
         workout_id: plan.id,
         workout_type: DAY_NAMES[day],
         workout_duration: duration,
         exercises_done: list.filter((exercise) => nextStatus[exercise.id] === 'done').length,
         exercises_skipped: list.filter((exercise) => nextStatus[exercise.id] === 'skipped').length,
+        exercise_durations: exerciseDurationsPayload,
+        ...(bodyWeightKg ? { body_weight_kg: Number(bodyWeightKg) } : {}),
       })
     } else {
       goTo(i + 1)
@@ -191,7 +217,11 @@ export default function WorkoutSession({ plan, day, onClose }) {
   }
 
   const ex = list[i]
-  const timedSec = ex ? timedSeconds(ex.reps) : null
+  const enteredDuration = ex?.duration
+    ? timedSeconds(ex.duration)
+      ?? (Number.isFinite(Number(ex.duration)) && Number(ex.duration) > 0 ? Number(ex.duration) : null)
+    : null
+  const timedSec = enteredDuration ?? (ex ? timedSeconds(ex.reps) : null)
   const timed = timedSec != null
   const doneSets = sets[ex?.id] ?? Array(ex?.sets ?? 0).fill(false)
   const doneCount = doneSets.filter(Boolean).length
@@ -216,7 +246,13 @@ export default function WorkoutSession({ plan, day, onClose }) {
 
   const done = list.filter((e) => status[e.id] === 'done').length
   const skipped = list.filter((e) => status[e.id] === 'skipped').length
-  const repsText = ex ? (timed ? ex.reps : `${ex.reps} reps`) : ''
+  const calorieByWorkoutExercise = Object.fromEntries(
+    calorieRecords.map((record) => [record.workout_exercise_id, Number(record.calories_burned) || 0])
+  )
+  const timedLabel = ex?.duration
+    ? `${ex.duration}${/\D/.test(ex.duration) ? '' : ' sec'}`
+    : ex?.reps
+  const repsText = ex ? (timed ? timedLabel : `${ex.reps} reps`) : ''
 
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-[#0d0d0d]">
@@ -234,16 +270,20 @@ export default function WorkoutSession({ plan, day, onClose }) {
             <span className="grid h-20 w-20 place-items-center rounded-full bg-gold/15 text-gold"><Trophy size={40} /></span>
             <h1 className="mt-5 text-3xl font-bold">Workout complete!</h1>
             <p className="mt-1 text-sm text-ink/80">Great job finishing {DAY_NAMES[day]}'s session.</p>
-            <div className="mt-6 grid w-full grid-cols-3 gap-3">
-              {[['Time', fmt(elapsed)], ['Done', done], ['Skipped', skipped]].map(([k, v]) => (
+            <div className="mt-6 grid w-full grid-cols-2 gap-3 sm:grid-cols-4">
+              {[['Time', fmt(elapsed)], ['Done', done], ['Skipped', skipped], ['Calories burned', `${fmt(totalCaloriesBurned)} kcal`]].map(([k, v]) => (
                 <div key={k} className="rounded-xl border border-white/10 bg-card p-3"><p className="text-2xl font-bold text-gold">{v}</p><p className="text-[11px] text-mute">{k}</p></div>
               ))}
             </div>
+            <p className="mt-2 text-[11px] text-mute">Calories are estimates based on exercise time, activity intensity, and body weight.</p>
             <ul className="mt-5 w-full space-y-2 text-left text-sm">
               {list.map((e) => (
                 <li key={e.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-card px-4 py-2.5">
                   <span>{e.name}</span>
-                  <span className={status[e.id] === 'done' ? 'text-green-400' : 'text-mute'}>{status[e.id] === 'done' ? 'Done' : 'Skipped'}</span>
+                  <span className="text-right">
+                    <span className={`block ${status[e.id] === 'done' ? 'text-green-400' : 'text-mute'}`}>{status[e.id] === 'done' ? 'Done' : 'Skipped'}</span>
+                    <span className="text-xs text-gold">{fmt(calorieByWorkoutExercise[e.id] ?? 0)} kcal</span>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -254,7 +294,17 @@ export default function WorkoutSession({ plan, day, onClose }) {
             {recordError && (
               <div role="alert" className="mb-4 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
                 <p>Workout finished, but its progress could not be saved: {recordError}</p>
-                <button type="button" disabled={savingRecord} onClick={() => pendingRecord && saveCompletion(pendingRecord)} className="mt-2 font-semibold underline disabled:opacity-50">
+                {needsBodyWeight && (
+                  <label className="mt-3 block text-xs font-semibold">
+                    Body weight (kg)
+                    <input type="number" min="20" max="350" step="0.1" value={bodyWeightKg} onChange={(event) => setBodyWeightKg(event.target.value)}
+                      className="mt-1 block w-full rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-sm text-ink" />
+                  </label>
+                )}
+                <button type="button" disabled={savingRecord || (needsBodyWeight && !bodyWeightKg)} onClick={() => pendingRecord && saveCompletion({
+                  ...pendingRecord,
+                  ...(bodyWeightKg ? { body_weight_kg: Number(bodyWeightKg) } : {}),
+                })} className="mt-2 font-semibold underline disabled:opacity-50">
                   {savingRecord ? 'Saving...' : 'Retry saving'}
                 </button>
               </div>
@@ -267,6 +317,7 @@ export default function WorkoutSession({ plan, day, onClose }) {
             <div className="mt-3 flex items-center gap-3">
               <span className="rounded-md bg-white/10 px-2 py-0.5 text-[11px]">{ex.muscle}</span>
               <span className="text-sm font-semibold text-gold">{ex.sets} sets × {repsText}</span>
+              {ex.weight && <span className="text-xs text-mute">{ex.weight}</span>}
             </div>
             {ex.notes && <p className="mt-3 text-sm text-ink/80">{ex.notes}</p>}
 
@@ -276,7 +327,7 @@ export default function WorkoutSession({ plan, day, onClose }) {
               <SetTimer key={`${ex.id}-set-${doneCount}`} seconds={targets[ex.id] ?? timedSec} setNumber={doneCount + 1} totalSets={ex.sets} onComplete={completeTimedSet} />
             ) : null}
 
-            <SetsList sets={doneSets} reps={ex.reps} timed={timed} locked={timed || resting} onToggle={toggleSet} />
+            <SetsList sets={doneSets} reps={timed ? timedLabel : ex.reps} timed={timed} locked={timed || resting} onToggle={toggleSet} />
 
             <div className="mt-auto pt-8">
               {list[i + 1] && <p className="mb-3 text-center text-xs text-mute">Up next: <span className="text-ink">{list[i + 1].name}</span></p>}

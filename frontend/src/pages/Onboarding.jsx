@@ -164,7 +164,6 @@ export default function Onboarding() {
     }
     const form = new FormData()
     Object.entries({
-      age,
       gender,
       phone_number: profile.phoneNumber,
       birth_date: birthDate,
@@ -247,7 +246,7 @@ export default function Onboarding() {
               <div><p className={colLabel}>DAY</p><WheelPicker label="Day" options={days} index={birth.d - 1} onChange={setPart('d')} /></div>
               <div><p className={colLabel}>YEAR</p><WheelPicker label="Year" options={YEARS} index={YEARS.indexOf(birth.y)} onChange={setPart('y')} /></div>
             </div>
-            <p className="mt-2 text-[11px] text-mute">Selected: {MONTHS[birth.m]} {birth.d}, {birth.y}</p>
+            <p className="mt-2 text-[11px] text-mute">Selected: {MONTHS[birth.m]} {birth.d}, {birth.y} · Age {age}</p>
 
             <div className="mt-6 flex items-center justify-between">
               <h2 className="text-sm font-bold">Height</h2>

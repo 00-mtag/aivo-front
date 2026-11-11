@@ -11,7 +11,6 @@ import {
 const APP_VERSION = '1.0.0'
 const STORE = 'aivo'                       // every localStorage key that starts with this belongs to the app
 const PREFS_KEY = `${STORE}:prefs`
-const LAST_REMINDER_KEY = `${STORE}:lastReminder`
 const PROFILE_KEY = `${STORE}:profile`
 const DEFAULT_PREFS = { reminders: false, reminderTime: '18:00', units: 'metric', weekStart: 'mon', aiPersonalize: true, analytics: true }
 
@@ -28,7 +27,7 @@ const FAQ = [
   { q: 'How do I add a workout to my plan?', a: 'Open Workouts, pick a plan, and choose Add to my plans. It then shows up on your weekly fitness calendar.' },
   { q: 'What can the AI Coach help with?', a: 'Ask it about exercises, form, meals, and how to stay on track. It gives general fitness guidance and does not replace a doctor or a registered dietitian.' },
   { q: 'Are my plans and progress saved when I log out?', a: 'Yes. Logging out only ends this session. Sign in again and your plans and progress are still there.' },
-  { q: 'I did not get a workout reminder.', a: 'Reminders need browser notifications to be allowed, and AIVO has to be open in a tab at the reminder time. Check Settings, allow notifications, then use Send a test notification.' },
+  { q: 'I did not get a workout or meal reminder.', a: 'Reminders need browser notifications to be allowed, and AIVO must be open in a signed-in tab at the reminder time. Background tabs may be throttled by your browser. Check Settings, allow notifications, then use Send a test notification.' },
 ]
 
 const TERMS = {
@@ -170,13 +169,16 @@ function SettingsView({ prefs, setPref, perm, setReminders, onChangePassword, to
   return (
     <div className="space-y-6">
       <Section title="Reminders">
-        <ToggleRow icon={Bell} label="Workout reminders" note="A notification at your chosen time" checked={prefs.reminders} onChange={setReminders} />
+        <ToggleRow icon={Bell} label="Workout and meal reminders" note="Workout 6 hours ahead; meals 2 hours ahead" checked={prefs.reminders} onChange={setReminders} />
         {prefs.reminders && (
-          <div className="flex items-center gap-3 px-3 py-3">
-            <RowText label="Remind me at" note="Sent daily while AIVO is open" />
-            <input type="time" value={prefs.reminderTime} onChange={(e) => e.target.value && setPref('reminderTime', e.target.value)}
-              aria-label="Reminder time" className="rounded-lg border border-white/10 bg-[#1b1b1b] px-2 py-1.5 text-sm text-white focus:border-gold/60 focus:outline-none" style={{ colorScheme: 'dark' }} />
-          </div>
+          <>
+            <div className="flex items-center gap-3 px-3 py-3">
+              <RowText label="Workout time" note="Reminder sent 6 hours before, while AIVO is open" />
+              <input type="time" value={prefs.reminderTime} onChange={(e) => e.target.value && setPref('reminderTime', e.target.value)}
+                aria-label="Workout time" className="rounded-lg border border-white/10 bg-[#1b1b1b] px-2 py-1.5 text-sm text-white focus:border-gold/60 focus:outline-none" style={{ colorScheme: 'dark' }} />
+            </div>
+            <p className="px-3 pb-3 text-[11px] text-white/50">Meal reminders use your device’s local time: breakfast 8:30 AM, lunch 12:00 PM, dinner 6:00 PM. Each arrives 2 hours before.</p>
+          </>
         )}
       </Section>
       {perm === 'unsupported' && <Note>This browser does not support notifications.</Note>}
@@ -471,8 +473,8 @@ function toForm(profile, name, rec) {
   const cm = num(pick(p, ['heightCm', 'height_cm', 'height']) ?? rec?.heightCm)
   const kg = num(pick(p, ['weightKg', 'weight_kg', 'weight']) ?? rec?.weightKg)
   const tkg = num(pick(p, ['targetWeightKg', 'target_weight_kg', 'targetWeight']))
-  const bd = String(pick(p, ['birthday', 'birthdate', 'dob']) || '')
-  const age = num(p.age)
+  const bd = String(pick(p, ['birthDate', 'birthday', 'birthdate', 'birth_date', 'dob']) || '')
+  const age = parseIso(bd) ? ageFrom(bd) : num(p.age)
   return {
     avatar: pick(p, ['avatar', 'photo', 'picture']) || '',
     name: String(pick(p, ['name']) || (name && name !== 'there' ? name : '')),
@@ -516,8 +518,7 @@ function buildValues(f, base) {
     avatar: f.avatar || '',
     name: f.name.trim(),
     phone: f.phone.trim(),
-    birthday: f.birthday || null,
-    age: effectiveAge(f),
+    birthDate: f.birthday || null,
     gender: f.gender,
     heightCm: r1(f.heightCm),
     weightKg: r2(f.weightKg),
@@ -1112,24 +1113,6 @@ export default function MenuDrawer({
     if (p === 'granted') { setPref('reminders', true); toast('Reminders on') }
     else toast('Allow notifications to get reminders')
   }
-
-  // Fires the reminder while the app is open in a tab. Runs even when the drawer is closed.
-  useEffect(() => {
-    if (!prefs.reminders || perm !== 'granted') return undefined
-    const tick = () => {
-      const d = new Date()
-      const now = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-      let last = null
-      try { last = localStorage.getItem(LAST_REMINDER_KEY) } catch { /* ignore */ }
-      if (now === prefs.reminderTime && last !== d.toDateString()) {
-        try { localStorage.setItem(LAST_REMINDER_KEY, d.toDateString()) } catch { /* ignore */ }
-        try { new Notification('Time to train', { body: 'Your AIVO session is waiting.' }) } catch { /* ignore */ }
-      }
-    }
-    tick()
-    const id = setInterval(tick, 20000)
-    return () => clearInterval(id)
-  }, [prefs.reminders, prefs.reminderTime, perm])
 
   useEffect(() => {
     if (!open) { setConfirming(false); setShown(false); setView('main'); setDiscard(false); dirtyRef.current = false; return undefined }

@@ -2,9 +2,18 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Bell, BellRing, Bot, CheckCheck, Droplets, Dumbbell, Moon, TrendingUp, UtensilsCrossed, X } from 'lucide-react'
+import { isLoggedIn } from '../../lib/api'
+import { userKey } from '../../lib/profile'
 
 const KEY = 'aivo:notifications'   // starts with "aivo" so "Clear data on this device" also resets it
 const PREFS_KEY = 'aivo:prefs'
+const SENT_REMINDERS_KEY = 'aivo:sentReminders'
+const MEAL_TIMES = [
+  { type: 'Breakfast', hour: 8, minute: 30 },
+  { type: 'Lunch', hour: 12, minute: 0 },
+  { type: 'Dinner', hour: 18, minute: 0 },
+]
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 /* ---------- storage: which notifications were read or dismissed ---------- */
 const load = () => {
@@ -22,11 +31,90 @@ const readPrefs = () => {
 
 const asText = (v) => (typeof v === 'string' ? v : v?.title ?? v?.label ?? v?.name ?? '')
 const asNote = (v) => (typeof v === 'string' ? '' : v?.note ?? v?.description ?? v?.detail ?? v?.text ?? '')
+const pad = (value) => String(value).padStart(2, '0')
+const localDateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+const displayTime = (date) => date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+
+function scheduledReminders({ now, plans, focus, prefs }) {
+  const events = []
+  for (const offset of [0, 1]) {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset)
+    const dateKey = localDateKey(date)
+    const weekday = WEEKDAYS[date.getDay()]
+    const workoutPlans = (plans ?? []).filter((plan) =>
+      plan.active !== false && plan.schedule?.[weekday.slice(0, 3)]?.length,
+    )
+    let workoutTitle = workoutPlans.map((plan) => plan.name).filter(Boolean).join(' + ')
+    let exerciseNames = [...new Set(workoutPlans.flatMap((plan) =>
+      (plan.schedule?.[weekday.slice(0, 3)] ?? []).map((exercise) => exercise.name).filter(Boolean),
+    ))]
+    if (offset === 0 && !workoutTitle && asText(focus) && !/rest/i.test(asText(focus))) {
+      workoutTitle = asText(focus)
+      exerciseNames = []
+    }
+
+    if (workoutTitle) {
+      const [hour, minute] = String(prefs.reminderTime ?? '18:00').split(':').map(Number)
+      if (Number.isInteger(hour) && Number.isInteger(minute)) {
+        const workoutAt = new Date(date)
+        workoutAt.setHours(hour, minute, 0, 0)
+        const remindAt = new Date(workoutAt.getTime() - 6 * 60 * 60 * 1000)
+        const exerciseSummary = exerciseNames.length ? ` Exercises: ${exerciseNames.join(', ')}.` : ''
+        events.push({
+          id: `workout-${dateKey}-${pad(hour)}${pad(minute)}`,
+          kind: 'workout',
+          title: `Workout: ${workoutTitle}`,
+          body: `${weekday} at ${displayTime(workoutAt)}.${exerciseSummary}`,
+          remindAt,
+          eventAt: workoutAt,
+          to: '/app/workouts',
+          icon: Dumbbell,
+        })
+      }
+    }
+
+    for (const meal of MEAL_TIMES) {
+      const eventAt = new Date(date)
+      eventAt.setHours(meal.hour, meal.minute, 0, 0)
+      const remindAt = new Date(eventAt.getTime() - 2 * 60 * 60 * 1000)
+      events.push({
+        id: `${meal.type.toLowerCase()}-${dateKey}`,
+        kind: 'meal',
+        title: `${meal.type} reminder`,
+        body: `Your ${meal.type.toLowerCase()} is at ${displayTime(eventAt)}.${plannedMealDescription(dateKey, meal.type)}`,
+        remindAt,
+        eventAt,
+        to: '/app/nutrition',
+        icon: UtensilsCrossed,
+      })
+    }
+  }
+  return events
+}
+
+function readSentReminders() {
+  try {
+    const value = JSON.parse(localStorage.getItem(userKey(SENT_REMINDERS_KEY)) || '[]')
+    return Array.isArray(value) ? value : []
+  } catch {
+    return []
+  }
+}
+
+function plannedMealDescription(date, mealType) {
+  try {
+    const nutrition = JSON.parse(localStorage.getItem(userKey('aivo_nutrition')) || '{}')
+    const meal = nutrition.meals?.find((item) => item.meal_date === date && item.meal_type === mealType)
+    const foods = (meal?.items ?? []).map((item) => item.food_name ?? item.name).filter(Boolean)
+    return foods.length ? ` Planned: ${foods.join(', ')}.` : ''
+  } catch {
+    return ''
+  }
+}
 
 /* ---------- what to show ---------- */
 // Everything here comes from data the dashboard already has, so the list is always relevant to today.
-function buildNotifications({ rec, focus, plans, root, onOpenMenu }) {
-  const now = new Date()
+function buildNotifications({ rec, focus, plans, root, onOpenMenu, now }) {
   const day = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`
   const prefs = readPrefs()
   const list = []
@@ -63,7 +151,19 @@ function buildNotifications({ rec, focus, plans, root, onOpenMenu }) {
 
   // 6. Reminders are off
   if (!prefs.reminders) {
-    list.push({ id: 'reminders-off', icon: BellRing, title: 'Turn on workout reminders', body: 'Get a nudge at your training time. You can set it in Settings.', action: onOpenMenu })
+    list.push({ id: 'reminders-off', icon: BellRing, title: 'Turn on workout and meal reminders', body: 'Get workout reminders 6 hours ahead and meal reminders 2 hours ahead. Set your workout time in Settings.', action: onOpenMenu })
+  } else {
+    for (const reminder of scheduledReminders({ now, plans, focus, prefs })) {
+      if (reminder.remindAt > now && reminder.eventAt.toDateString() === now.toDateString()) {
+        list.push({
+          id: `scheduled-${reminder.id}`,
+          icon: reminder.icon,
+          title: reminder.title,
+          body: `${reminder.body} Reminder at ${displayTime(reminder.remindAt)}.`,
+          to: reminder.to.replace('/app', root),
+        })
+      }
+    }
   }
 
   // 7. Coach
@@ -79,11 +179,12 @@ export default function NotificationsBell({ rec, focus, plans, root = '/app', on
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [state, setState] = useState(load)
+  const [now, setNow] = useState(() => new Date())
   const [pos, setPos] = useState({ top: 72, right: 12, width: 320, maxH: 480 })
   const btnRef = useRef(null)
   const panelRef = useRef(null)
 
-  const items = buildNotifications({ rec, focus, plans, root, onOpenMenu }).filter((n) => !state.dismissed.includes(n.id))
+  const items = buildNotifications({ rec, focus, plans, root, onOpenMenu, now }).filter((n) => !state.dismissed.includes(n.id))
   const unread = items.filter((n) => !state.read.includes(n.id)).length
 
   const update = (fn) => setState((s) => { const next = fn(s); save(next); return next })
@@ -91,6 +192,52 @@ export default function NotificationsBell({ rec, focus, plans, root = '/app', on
 
   // Re-read storage each time the panel opens, in case settings changed in the menu
   const toggle = () => { if (!open) setState(load()); setOpen((o) => !o) }
+
+  useEffect(() => {
+    const clock = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(clock)
+  }, [])
+
+  useEffect(() => {
+    const checkReminders = () => {
+      if (!isLoggedIn() || !readPrefs().reminders || !('Notification' in window) || Notification.permission !== 'granted') return
+
+      const current = new Date()
+      const sent = readSentReminders()
+      const events = scheduledReminders({ now: current, plans, focus, prefs: readPrefs() })
+      const due = events.filter((event) => {
+        const elapsed = current.getTime() - event.remindAt.getTime()
+        return elapsed >= 0 && elapsed < 30 * 60 * 1000 && !sent.includes(event.id)
+      })
+      if (due.length === 0) return
+
+      const updatedSent = [...sent]
+      for (const event of due) {
+        try {
+          const notification = new Notification(event.kind === 'workout' ? 'Workout in 6 hours' : `${event.title}: in 2 hours`, {
+            body: `${event.title}. ${event.body}`,
+            tag: event.id,
+          })
+          notification.onclick = () => {
+            window.focus()
+            window.location.assign(event.to)
+          }
+          updatedSent.push(event.id)
+        } catch {
+          // Permission can be revoked while the app is open.
+        }
+      }
+      try {
+        localStorage.setItem(userKey(SENT_REMINDERS_KEY), JSON.stringify(updatedSent.slice(-80)))
+      } catch {
+        // A storage failure can allow a duplicate reminder on a later check.
+      }
+    }
+
+    checkReminders()
+    const timer = setInterval(checkReminders, 20_000)
+    return () => clearInterval(timer)
+  }, [plans, focus])
 
   // The panel is placed with real pixel values measured from the bell, so it always fits the screen.
   // Phones get a full-width card with a 12px margin, larger screens a 24rem card aligned to the page edge.
