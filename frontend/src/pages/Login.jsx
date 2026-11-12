@@ -4,7 +4,7 @@ import AuthLayout from '../components/AuthLayout'
 import TextField from '../components/TextField'
 import Button from '../components/Button'
 import GoogleButton from '../components/GoogleButton'
-import { errorsFrom, loginRequest, saveSession } from '../lib/api'
+import { errorsFrom, googleLoginRequest, loginRequest, saveSession } from '../lib/api'
 import LoadingScreen from '../components/LoadingScreen'
 import { markPanelLoaded } from '../lib/usePanelLoader'
 
@@ -19,6 +19,22 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+
+  const signInWithGoogle = async (credential) => {
+    setBusy(true)
+    setFormError('')
+    setNotice('')
+    try {
+      const { data } = await googleLoginRequest(credential)
+      saveSession(data)
+      markPanelLoaded('dashboard')
+      setSignedIn(true)
+    } catch (err) {
+      setFormError(errorsFrom(err).form)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -50,7 +66,7 @@ export default function Login() {
       </div>
 
       <div className="rise mt-6 space-y-5" style={{ animationDelay: '60ms' }}>
-        <GoogleButton onClick={() => setNotice('Google sign-in is not set up yet. Please use email for now.')} />
+        <GoogleButton onCredential={signInWithGoogle} />
         <div className="flex items-center gap-3 text-[11px] font-medium text-ink/90"><span className="h-px flex-1 bg-white/70" />or continue with email<span className="h-px flex-1 bg-white/70" /></div>
       </div>
 

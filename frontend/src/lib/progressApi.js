@@ -22,7 +22,7 @@ function mealEntries(meals, intakeRecords) {
     intakeByMeal.set(mealId, (intakeByMeal.get(mealId) ?? 0) + number(record.calories_intake))
   }
 
-  return dedupeMeals(meals.map((meal) => {
+  return dedupeMeals(meals.filter((meal) => intakeByMeal.has(Number(meal.meal_id))).map((meal) => {
     const items = meal.items ?? []
     const itemTotal = (key) => items.reduce((total, item) => total + number(item[key]), 0)
     const mealId = Number(meal.meal_id)
@@ -32,7 +32,7 @@ function mealEntries(meals, intakeRecords) {
       date: dateKey(meal.meal_date),
       type: meal.meal_type,
       name: items.map((item) => item.food_name).filter(Boolean).join(', ') || meal.meal_type,
-      calories: intakeByMeal.has(mealId) ? intakeByMeal.get(mealId) : itemTotal('calories'),
+      calories: intakeByMeal.get(mealId),
       protein: itemTotal('protein'),
       carbs: itemTotal('carbohydrates'),
       fat: itemTotal('fat'),

@@ -4,12 +4,14 @@ import { api, errorsFrom } from '../../lib/api'
 
 const MAX_CALORIES = 5000
 
-export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDate, goal, gender, beforeGenerate, onSave, onClose }) {
+export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDate, endDate, goal, gender, beforeGenerate, onSave, onClose }) {
   const minCalories = gender === 'Female' ? 1200 : 1500
   const recommendedCalories = Math.min(MAX_CALORIES, Math.max(minCalories, defaultCalories))
   const [customCalories, setCustomCalories] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const dateOptions = { weekday: 'short', month: 'short', day: 'numeric' }
+  const dateRange = `${new Date(`${startDate}T00:00:00`).toLocaleDateString('en-US', dateOptions)} – ${new Date(`${endDate}T00:00:00`).toLocaleDateString('en-US', dateOptions)}`
 
   const generate = async () => {
     const dailyCalories = Number(customCalories ?? recommendedCalories)
@@ -33,7 +35,7 @@ export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDa
     } catch (requestError) {
       setError(requestError.response
         ? errorsFrom(requestError).form
-        : requestError.message || 'The weekly meal plan could not be created.')
+        : requestError.message || 'The meal plan could not be created.')
     } finally {
       setBusy(false)
     }
@@ -43,9 +45,12 @@ export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDa
     <Modal title="Let AI decide" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm leading-relaxed text-ink/90">
-          AIVO will create a full week of meals using foods in the app database and save them to your meal plan.
+          AIVO will create breakfast, lunch, dinner, and snack for each remaining day this week ({dateRange}), using foods in the app database. It will not add meals for next week.
           Your TDEE and fitness goal are used to suggest a starting daily calorie target, which you can change.
           Your daily protein, carbohydrate, and fat targets are sent to guide the plan and enforced as limits.
+        </p>
+        <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+          AI-generated meals are suggestions and may not meet your daily macro-nutrient needs. Review and adjust the plan to fit your requirements.
         </p>
         <Field label="Daily calorie target (kcal)">
           <input type="number" min={minCalories} max={MAX_CALORIES} step="1" value={customCalories ?? recommendedCalories}
@@ -64,7 +69,7 @@ export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDa
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <div className="flex justify-end gap-3 pt-1">
           <button type="button" onClick={onClose} disabled={busy} className={ghostBtn}>Cancel</button>
-          <button type="button" onClick={generate} disabled={busy} className={goldBtn}>{busy ? 'Planning your week...' : 'Create weekly plan'}</button>
+          <button type="button" onClick={generate} disabled={busy} className={goldBtn}>{busy ? 'Planning your meals...' : 'Create plan through Sunday'}</button>
         </div>
       </div>
     </Modal>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { uid } from './workouts'
 import { FOOD_LIBRARY, defaultGoal, loadNutrition, macrosFor, planDay, saveNutrition } from './nutrition'
-import { createFood as createFoodRequest, dedupeMeals, fetchNutrition, messageOf, normFood, normGoal, normMeal, pickGoal, saveGoal as saveGoalRequest, saveMeal } from './nutritionApi'
+import { createFood as createFoodRequest, dedupeMeals, fetchNutrition, markMealDone as markMealDoneRequest, messageOf, normFood, normGoal, normMeal, pickGoal, saveGoal as saveGoalRequest, saveMeal } from './nutritionApi'
 
 const SAVE_DELAY = 500
 const keyOf = (date, type) => `${date}|${type}`
@@ -66,7 +66,7 @@ export default function useNutrition(rec) {
 
   // Saves one meal (create or update). Saves for the same meal run one after another.
   function flush(date, type) {
-    if (modeRef.current !== 'online') return
+    if (modeRef.current !== 'online') return Promise.resolve()
     const k = keyOf(date, type)
     chains.current[k] = (chains.current[k] ?? Promise.resolve()).then(async () => {
       const m = ref.current.meals.find((x) => x.meal_date === date && x.meal_type === type)
@@ -85,6 +85,7 @@ export default function useNutrition(rec) {
         setSyncError(messageOf(err))
       }
     })
+    return chains.current[k]
   }
   const saveSoon = (date, type, delay = SAVE_DELAY) => {
     if (modeRef.current !== 'online') return
@@ -124,6 +125,37 @@ export default function useNutrition(rec) {
   const setQty = (date, type, itemId, qty) => touch(date, type, (m) => ({ ...m, items: m.items.map((x) => (x.meal_item_id === itemId ? withQty(x, qty) : x)) }))
   const removeItem = (date, type, itemId) => touch(date, type, (m) => ({ ...m, items: m.items.filter((x) => x.meal_item_id !== itemId) }))
   const setNote = (date, type, notes) => touch(date, type, (m) => ({ ...m, notes }))
+
+  const markDone = async (date, type) => {
+    if (modeRef.current !== 'online') {
+      throw new Error('Connect to the server to log a completed meal.')
+    }
+
+    const k = keyOf(date, type)
+    clearTimeout(timers.current[k])
+    delete timers.current[k]
+    await flush(date, type)
+    if (dirty.current.has(k)) {
+      throw new Error('The meal could not be saved. Check the connection and try again.')
+    }
+
+    const meal = ref.current.meals.find((item) => item.meal_date === date && item.meal_type === type)
+    if (!meal || !meal.items.length || typeof meal.meal_id !== 'number') {
+      throw new Error('Add food to this meal before marking it done.')
+    }
+
+    try {
+      const { data: response } = await markMealDoneRequest(meal.meal_id)
+      const completed = normMeal(response.meal)
+      commit((current) => ({
+        ...current,
+        meals: current.meals.map((item) => item.meal_id === meal.meal_id ? completed : item),
+      }))
+      return completed
+    } catch (error) {
+      throw new Error(messageOf(error), { cause: error })
+    }
+  }
 
   // Replaces the meals on the given days with a generated plan. Existing meals keep their id and just get new items.
   const generate = (ymds) => {
@@ -179,7 +211,7 @@ export default function useNutrition(rec) {
   const createFood = async (food) => {
     let created = food
     if (modeRef.current === 'online') {
-      try { created = normFood((await createFoodRequest(food)).data.food) } catch (err) { throw new Error(messageOf(err)) }
+      try { created = normFood((await createFoodRequest(food)).data.food) } catch (err) { throw new Error(messageOf(err), { cause: err }) }
     }
     commit((d) => ({ ...d, foods: [...d.foods, created] }))
     return created
@@ -187,5 +219,5 @@ export default function useNutrition(rec) {
 
   const retry = () => [...dirty.current].forEach((k) => { const [d, t] = k.split('|'); flush(d, t) })
 
-  return { ...data, status, notice, syncError, addItem, setQty, removeItem, setNote, generate, replaceWeekMeals, saveGoal, resetGoal, createFood, retry }
+  return { ...data, status, notice, syncError, addItem, setQty, removeItem, setNote, markDone, generate, replaceWeekMeals, saveGoal, resetGoal, createFood, retry }
 }

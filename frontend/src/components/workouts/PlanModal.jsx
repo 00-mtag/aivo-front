@@ -42,10 +42,12 @@ export default function PlanModal({ plan, onSave, onClose, onAiDecide }) {
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Minutes per session"><input type="number" min="10" max="180" value={f.minutes} onChange={set('minutes')} className={fieldClass} /></Field>
-          <Field label="Duration (weeks)"><input type="number" min="1" max="52" value={f.weeks} onChange={set('weeks')} className={fieldClass} /></Field>
-        </div>
+        {plan && (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Minutes per session"><input type="number" min="10" max="180" value={f.minutes} onChange={set('minutes')} className={fieldClass} /></Field>
+            <Field label="Duration (weeks)"><input type="number" min="1" max="52" value={f.weeks} onChange={set('weeks')} className={fieldClass} /></Field>
+          </div>
+        )}
         <p className="text-[11px] text-mute">{plan ? '' : 'After creating the plan you can add exercises to each day of the week.'}</p>
         <div className="flex flex-wrap justify-end gap-3 pt-1">
           <button type="button" onClick={onClose} disabled={saving} className={ghostBtn}>Cancel</button>

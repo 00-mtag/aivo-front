@@ -122,9 +122,18 @@ function buildNotifications({ rec, focus, plans, root, onOpenMenu, now }) {
   // 1. Today's training
   const focusTitle = asText(focus)
   const isRest = !focusTitle || /rest/i.test(focusTitle)
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()]
+  const hasScheduledWorkout = (plans ?? []).some((plan) =>
+    plan.active !== false && plan.schedule?.[weekday]?.length,
+  )
+  const hasNoWorkoutScheduled = /nothing scheduled/i.test(focusTitle)
   list.push(isRest
-    ? { id: `today-${day}`, icon: Moon, title: 'Rest day today', body: asNote(focus) || 'Recover, stretch or take a light walk.', to: `${root}/workouts` }
-    : { id: `today-${day}`, icon: Dumbbell, title: `Today: ${focusTitle}`, body: asNote(focus) || 'Your session is ready when you are.', to: `${root}/workouts` })
+    ? { id: `today-${day}`, icon: Moon, title: 'Rest day today', body: asNote(focus) || focus?.sub || 'Recover, stretch or take a light walk.', to: `${root}/workouts` }
+    : hasScheduledWorkout
+      ? { id: `today-${day}`, icon: Dumbbell, title: `Today: ${focusTitle}`, body: asNote(focus) || focus?.sub || 'Your scheduled session is ready when you are.', to: `${root}/workouts` }
+      : hasNoWorkoutScheduled
+        ? { id: `today-${day}`, icon: Moon, title: 'No workout scheduled today', body: asNote(focus) || focus?.sub || 'Your saved plans have no session scheduled today.', to: `${root}/workouts` }
+        : { id: `today-${day}`, icon: Dumbbell, title: `Recommended today: ${focusTitle}`, body: focus?.sub || 'This is a suggestion, not a saved workout plan. Add it to your plans to schedule a session.', to: `${root}/workouts` })
 
   // 2. No plans yet
   if (!plans || plans.length === 0) {

@@ -12,6 +12,7 @@ export const normFood = (f) => ({
 })
 export const normMeal = (m) => ({
   meal_id: Number(m.meal_id), meal_type: m.meal_type, meal_date: day(m.meal_date), notes: m.notes ?? '',
+  is_done: Boolean(m.is_done),
   items: (m.items ?? []).map((i) => ({
     meal_item_id: Number(i.meal_item_id), food_id: Number(i.food_id), food_name: i.food_name ?? '', quantity: num(i.quantity),
     calories: num(i.calories), protein: num(i.protein), carbohydrates: num(i.carbohydrates), fat: num(i.fat), notes: i.notes ?? '',
@@ -72,5 +73,6 @@ export const goalBody = (g) => ({
 export const foodBody = (f) => ({ name: f.name, ingredients: f.ingredients || null, calories: f.calories, protein: f.protein, carbohydrates: f.carbohydrates, fat: f.fat, serving_size: f.serving_size, serving_unit: f.serving_unit })
 
 export const saveMeal = (m) => (typeof m.meal_id === 'number' ? api.put(`/nutrition/meals/${m.meal_id}`, mealBody(m)) : api.post('/nutrition/meals', mealBody(m)))
+export const markMealDone = (mealId) => api.post(`/nutrition/meals/${mealId}/done`)
 export const saveGoal = (g) => (g.goal_id ? api.put(`/nutrition/goals/${g.goal_id}`, goalBody(g)) : api.post('/nutrition/goals', goalBody(g)))
 export const createFood = (f) => api.post('/nutrition/foods', foodBody(f))

@@ -16,6 +16,7 @@ api.interceptors.request.use((config) => {
 
 // Endpoints and field names: confirm them with whoever builds the Laravel side.
 export const loginRequest = ({ email, password }) => api.post('/login', { email, password })
+export const googleLoginRequest = (credential) => api.post('/auth/google', { credential })
 export const registerRequest = ({ username, email, phone, password }) =>
   api.post('/register', { username, email, ...(phone ? { phone } : {}), password, password_confirmation: password })
 export const forgotPasswordRequest = (payload) => api.post('/forgot-password', payload)

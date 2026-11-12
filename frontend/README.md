@@ -14,3 +14,7 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Google sign-in
+
+Create a Web application OAuth client ID in Google Cloud Console and add the frontend origin (for local development, `http://localhost:5173`) to its authorized JavaScript origins. Put that client ID in `VITE_GOOGLE_CLIENT_ID` in this app's `.env` file and in `GOOGLE_CLIENT_ID` in `aivo-back/backend/.env`. Use the same ID in both apps; no client secret is required.

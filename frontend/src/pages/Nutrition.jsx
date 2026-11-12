@@ -10,7 +10,6 @@ import { getProfile, recommendedDailyCalories } from '../lib/profile'
 import { recommend } from '../lib/recommend'
 import useNutrition from '../lib/useNutrition'
 import { MEAL_TYPES, dayTotals, fromYmd, mealTotals, toYmd, weekDates } from '../lib/nutrition'
-import { logMeal, logWater } from '../lib/progress'
 
 const AI_SUGGESTIONS = ['Calculate my calorie and macro goals', 'Suggest a high-protein meal', 'How should I fuel endurance training?']
 
@@ -35,6 +34,8 @@ export default function Nutrition() {
   const [goalOpen, setGoalOpen] = useState(false)
   const [aiPlanOpen, setAiPlanOpen] = useState(false)
   const [aiPlanSaving, setAiPlanSaving] = useState(false)
+  const [mealDoneSaving, setMealDoneSaving] = useState('')
+  const [mealDoneError, setMealDoneError] = useState('')
   const [aiOpen, setAiOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches)
   const [aiWide, setAiWide] = useState(false)
 
@@ -47,7 +48,14 @@ export default function Nutrition() {
 
   const foodById = Object.fromEntries(foods.map((x) => [x.food_id, x]))
   const dates = weekDates(weekOffset)
-  const todayYmd = toYmd(new Date())
+  const today = new Date()
+  const todayYmd = toYmd(today)
+  const daysUntilSunday = (7 - today.getDay()) % 7
+  const planEndDate = toYmd(new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysUntilSunday))
+  const aiPlanDates = Array.from({ length: daysUntilSunday + 1 }, (_, offset) =>
+    toYmd(new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset)),
+  )
+  const aiPlanRange = `${fromYmd(todayYmd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${fromYmd(planEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
   const totals = dayTotals(meals, selected)
   const profile = getProfile()
   const goalAdjustment = { 'Lose weight': -500, 'Build muscle': 300, 'Improve endurance': 100, 'Maintain fitness': 0 }[rec.goal] ?? 0
@@ -56,6 +64,17 @@ export default function Nutrition() {
   const remaining = calGoal - totals.calories
   const mealOf = (type) => meals.find((m) => m.meal_date === selected && m.meal_type === type)
   const hasMeals = (ymd) => meals.some((m) => m.meal_date === ymd && m.items.length)
+  const markMealDone = async (type) => {
+    setMealDoneSaving(type)
+    setMealDoneError('')
+    try {
+      await nu.markDone(selected, type)
+    } catch (error) {
+      setMealDoneError(error.message || 'The meal could not be marked done.')
+    } finally {
+      setMealDoneSaving('')
+    }
+  }
 
   const changeWeek = (delta) => {
     const idx = Math.max(0, dates.findIndex((d) => toYmd(d) === selected))
@@ -65,9 +84,8 @@ export default function Nutrition() {
   const goToday = () => { setWeekOffset(0); setSelected(todayYmd) }
 
   const confirmReplaceWeek = () => {
-    const weekDatesList = dates.map(toYmd)
-    return !meals.some((meal) => weekDatesList.includes(meal.meal_date) && meal.items.length)
-      || window.confirm(`Replace the meals already planned for ${weekLabel}?`)
+    return !meals.some((meal) => aiPlanDates.includes(meal.meal_date) && meal.items.length)
+      || window.confirm(`Replace the meals already planned for ${aiPlanRange}?`)
   }
   const saveGeneratedWeek = async (generatedPlan) => {
     setAiPlanSaving(true)
@@ -103,6 +121,7 @@ export default function Nutrition() {
                 <button type="button" onClick={nu.retry} className="font-semibold underline">Retry</button>
               </div>
             )}
+            {mealDoneError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-xs text-danger">{mealDoneError}</p>}
 
             <div className="flex flex-wrap gap-3">
               <button type="button" onClick={() => setAiPlanOpen(true)} disabled={aiPlanSaving} className={`${goldBtn} flex items-center gap-2`}><Sparkles size={16} /> Let AI decide</button>
@@ -167,7 +186,14 @@ export default function Nutrition() {
                       <h2 className="font-bold">{type}</h2>
                       <p className="text-xs text-mute">{fmt(t.calories)} kcal · P {fmt(t.protein)} g · C {fmt(t.carbohydrates)} g · F {fmt(t.fat)} g</p>
                     </div>
-                    <button type="button" onClick={() => setAddFor(type)} className="flex shrink-0 items-center gap-1.5 rounded-full border border-gold/60 px-4 py-2 text-xs font-semibold text-gold transition hover:bg-gold/10"><Plus size={14} /> Add food</button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button type="button" onClick={() => markMealDone(type)}
+                        disabled={!items.length || meal?.is_done || status !== 'online' || mealDoneSaving === type}
+                        className="rounded-full border border-emerald-400/50 px-3 py-2 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-50">
+                        {mealDoneSaving === type ? 'Saving...' : meal?.is_done ? 'Done' : 'Meal Done'}
+                      </button>
+                      <button type="button" onClick={() => setAddFor(type)} className="flex items-center gap-1.5 rounded-full border border-gold/60 px-4 py-2 text-xs font-semibold text-gold transition hover:bg-gold/10"><Plus size={14} /> Add food</button>
+                    </div>
                   </div>
                   {items.length === 0 ? (
                     <p className="border-t border-white/10 px-4 py-4 text-sm text-mute">Nothing planned for {type.toLowerCase()} yet.</p>
@@ -212,7 +238,7 @@ export default function Nutrition() {
       )}
       {aiPlanOpen && (
         <AiWeekPlanModal defaultCalories={defaultCalories} macroTargets={goal}
-          startDate={toYmd(dates[0])} goal={rec.goal} gender={profile?.gender}
+          startDate={todayYmd} endDate={planEndDate} goal={rec.goal} gender={profile?.gender}
           beforeGenerate={confirmReplaceWeek}
           onSave={saveGeneratedWeek}
           onClose={() => { if (!aiPlanSaving) setAiPlanOpen(false) }} />

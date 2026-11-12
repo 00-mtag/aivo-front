@@ -5,7 +5,7 @@ import TextField from '../components/TextField'
 import PasswordStrength from '../components/PasswordStrength'
 import Button from '../components/Button'
 import GoogleButton from '../components/GoogleButton'
-import { errorsFrom, registerRequest, saveSession } from '../lib/api'
+import { errorsFrom, googleLoginRequest, registerRequest, saveSession } from '../lib/api'
 import LoadingScreen from '../components/LoadingScreen'
 import { markPanelLoaded } from '../lib/usePanelLoader'
 
@@ -22,6 +22,25 @@ export default function Register() {
   const confirmError = errors.confirm && !matches ? errors.confirm : undefined // drops away once the passwords match
   const showMatch = form.confirm.length > 0 && !confirmError
 
+  const signInWithGoogle = async (credential) => {
+    setBusy(true)
+    setErrors({})
+    setFormError('')
+    setNotice('')
+    try {
+      const { data } = await googleLoginRequest(credential)
+      saveSession(data)
+      markPanelLoaded('dashboard')
+      setSignedIn(true)
+    } catch (err) {
+      const r = errorsFrom(err)
+      setErrors(r.fields)
+      setFormError(r.form)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     const next = {}
@@ -34,8 +53,11 @@ export default function Register() {
     if (Object.keys(next).length) return
     setBusy(true)
     try {
-      const { confirm, ...rest } = form
-      const { data } = await registerRequest({ ...rest, username: form.username.trim(), email: form.email.trim() })
+      const { data } = await registerRequest({
+        username: form.username.trim(),
+        email: form.email.trim(),
+        password: form.password,
+      })
       if (data?.token ?? data?.access_token) { saveSession(data); markPanelLoaded('dashboard'); setSignedIn(true) }
       else navigate('/login', { replace: true, state: { registered: true } })
     } catch (err) {
@@ -55,7 +77,7 @@ export default function Register() {
       </div>
 
       <div className="rise mt-6 space-y-5" style={{ animationDelay: '60ms' }}>
-        <GoogleButton onClick={() => setNotice('Google sign-in is not set up yet. Please use email for now.')} />
+        <GoogleButton onCredential={signInWithGoogle} />
         <div className="flex items-center gap-3 text-[11px] font-medium text-ink/90"><span className="h-px flex-1 bg-white/70" />or continue with email<span className="h-px flex-1 bg-white/70" /></div>
       </div>
 
