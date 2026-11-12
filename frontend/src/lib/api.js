@@ -6,6 +6,8 @@ export const api = axios.create({
   headers: { Accept: 'application/json' },
 })
 
+
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('aivo_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -16,7 +18,7 @@ api.interceptors.request.use((config) => {
 export const loginRequest = ({ email, password }) => api.post('/login', { email, password })
 export const registerRequest = ({ username, email, phone, password }) =>
   api.post('/register', { username, email, ...(phone ? { phone } : {}), password, password_confirmation: password })
-
+export const forgotPasswordRequest = (payload) => api.post('/forgot-password', payload)
 export const saveSession = (data) => {
   const token = data?.token ?? data?.access_token
   if (token) localStorage.setItem('aivo_token', token)

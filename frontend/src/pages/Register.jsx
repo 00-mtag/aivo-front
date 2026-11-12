@@ -11,13 +11,16 @@ import { markPanelLoaded } from '../lib/usePanelLoader'
 
 export default function Register() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ username: '', email: '', password: '' })
+  const [form, setForm] = useState({ username: '', email: '', password: '', confirm: '' })
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const matches = form.confirm === form.password
+  const confirmError = errors.confirm && !matches ? errors.confirm : undefined // drops away once the passwords match
+  const showMatch = form.confirm.length > 0 && !confirmError
 
   const submit = async (e) => {
     e.preventDefault()
@@ -25,11 +28,14 @@ export default function Register() {
     if (form.username.trim().length < 3) next.username = 'Use at least 3 characters.'
     if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) next.email = 'Enter a valid email address.'
     if (form.password.length < 8) next.password = 'Use at least 8 characters.'
+    if (!form.confirm) next.confirm = 'Confirm your password.'
+    else if (form.confirm !== form.password) next.confirm = 'Passwords do not match.'
     setErrors(next); setFormError(''); setNotice('')
     if (Object.keys(next).length) return
     setBusy(true)
     try {
-      const { data } = await registerRequest({ ...form, username: form.username.trim(), email: form.email.trim() })
+      const { confirm, ...rest } = form
+      const { data } = await registerRequest({ ...rest, username: form.username.trim(), email: form.email.trim() })
       if (data?.token ?? data?.access_token) { saveSession(data); markPanelLoaded('dashboard'); setSignedIn(true) }
       else navigate('/login', { replace: true, state: { registered: true } })
     } catch (err) {
@@ -59,6 +65,17 @@ export default function Register() {
         <div className="space-y-2.5">
           <TextField label="Password" type="password" name="password" autoComplete="new-password" value={form.password} onChange={set('password')} error={errors.password} />
           <PasswordStrength password={form.password} />
+        </div>
+        <div className="space-y-2">
+          <TextField label="Confirm Password" type="password" name="confirm" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} error={confirmError} />
+          {showMatch && (
+            <p role="status" className={`flex items-center gap-1.5 text-xs font-medium ${matches ? 'text-emerald-400' : 'text-danger'}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {matches ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <path d="M6 6l12 12M18 6L6 18" />}
+              </svg>
+              {matches ? 'Passwords match' : 'Passwords do not match yet'}
+            </p>
+          )}
         </div>
 
         {formError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{formError}</p>}

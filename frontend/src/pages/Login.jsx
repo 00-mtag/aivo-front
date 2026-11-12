@@ -63,7 +63,7 @@ export default function Login() {
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-3.5 w-3.5 accent-gold" />
             Remember me
           </label>
-          <button type="button" onClick={() => setNotice('Password reset is not set up yet.')} className="font-semibold hover:text-gold hover:underline">Forgot Password?</button>
+          <Link to="/forgot-password" state={{ email: form.email.trim() }} className="font-semibold hover:text-gold hover:underline">Forgot Password?</Link>
         </div>
 
         {formError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{formError}</p>}
