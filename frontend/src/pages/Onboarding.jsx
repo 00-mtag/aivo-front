@@ -1,16 +1,40 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Check } from 'lucide-react'
+import { Activity, Armchair, ArrowRight, Bike, Camera, Check, ChevronLeft, Clock, Dumbbell, Flame, Footprints, HeartPulse, Loader2, MousePointerClick, Scale, ShieldCheck, Sprout, TrendingDown, Trophy, User, Zap } from 'lucide-react'
 import WheelPicker from '../components/onboarding/WheelPicker'
+import { BmiMeter, Chip, OptionCard, Screen, Segmented, bmiBand } from '../components/onboarding/parts'
 import logo from '../assets/logo.png'
 import { api, errorsFrom } from '../lib/api'
 import { calculateTdee, saveProfile } from '../lib/profile'
-import { setTargets, logWeight } from '../lib/progress'
+import { recommend } from '../lib/recommend'
+import { logWeight, setTargets } from '../lib/progress'
 
-const GENDERS = ['Male', 'Female', 'Prefer not to say']
-const GOALS = ['Lose weight', 'Build muscle', 'Improve endurance', 'Maintain fitness']
-const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
+/* ---------- choices (values are sent to the backend, keep them as they are) ---------- */
+const GENDERS = [
+  { value: 'Male', glyph: '♂', desc: null },
+  { value: 'Female', glyph: '♀', desc: null },
+  { value: 'Prefer not to say', icon: User, desc: null },
+]
+const GOALS = [
+  { value: 'Lose weight', icon: TrendingDown, desc: 'Burn fat with a small calorie deficit' },
+  { value: 'Build muscle', icon: Dumbbell, desc: 'Get stronger and add lean mass' },
+  { value: 'Improve endurance', icon: HeartPulse, desc: 'Train longer without getting tired' },
+  { value: 'Maintain fitness', icon: Scale, desc: 'Stay active and keep your current shape' },
+]
+const LEVELS = [
+  { value: 'Beginner', icon: Sprout, desc: 'New to training, or getting back into it' },
+  { value: 'Intermediate', icon: Flame, desc: 'You train regularly and know the basics' },
+  { value: 'Advanced', icon: Trophy, desc: 'Years of consistent, structured training' },
+]
+const ACTIVITY = [
+  { value: 'Sedentary', icon: Armchair, desc: 'Desk job, little or no exercise' },
+  { value: 'Lightly active', icon: Footprints, desc: 'Light exercise 1 to 3 days a week' },
+  { value: 'Moderately active', icon: Bike, desc: 'Exercise 3 to 5 days a week' },
+  { value: 'Very active', icon: Activity, desc: 'Hard exercise 6 to 7 days a week' },
+  { value: 'Extra active', icon: Zap, desc: 'Physical job, or training twice a day' },
+]
 const ALLERGIES = ['Milk', 'Eggs', 'Peanuts', 'Tree nuts', 'Fish', 'Shellfish', 'Wheat', 'Soybeans', 'Sesame']
+const DIETS = ['Vegetarian', 'Vegan', 'Pescatarian', 'Halal', 'Keto', 'Low carb', 'Gluten-free', 'Dairy-free', 'High protein']
 const HEALTH_CONDITIONS = [
   'High Blood Pressure (Hypertension)',
   'Poor Heart Blood Flow (Coronary Artery Disease)',
@@ -23,126 +47,123 @@ const HEALTH_CONDITIONS = [
 ]
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+/* ---------- picker ranges ---------- */
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 const THIS_YEAR = new Date().getFullYear()
-const YEARS = Array.from({ length: 88 }, (_, i) => THIS_YEAR - 100 + i)   // oldest to youngest (13+)
-const INCHES = Array.from({ length: 48 }, (_, i) => 48 + i)      // 4 ft 0 in to 7 ft 11 in
-const CMS = Array.from({ length: 151 }, (_, i) => 100 + i)       // 100 to 250 cm
-const KGS = Array.from({ length: 331 }, (_, i) => 20 + i)        // 20 to 350 kg
-const LBS = Array.from({ length: 729 }, (_, i) => 44 + i)        // 44 to 772 lb
+const YEARS = range(THIS_YEAR - 100, THIS_YEAR - 13)      // oldest to youngest (13+)
+const INCHES = range(48, 95)                              // 4 ft 0 in to 7 ft 11 in
+const CMS = range(100, 250)
+const KG_MIN = 30, LB_MIN = 66
+const KGS = range(KG_MIN, 250)
+const LBS = range(LB_MIN, 551)
 const LB_PER_KG = 2.20462
-const ACTIVITY_LEVELS = ['Sedentary', 'Lightly active', 'Moderately active', 'Very active', 'Extra active']
+const TOTAL = 10   // number of question screens
+
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
 const pad = (n) => String(n).padStart(2, '0')
 const fmtIn = (n) => `${Math.floor(n / 12)} ft ${n % 12} in`
-const inputClass = 'w-full rounded-xl border border-white/10 bg-card px-4 py-3 text-sm text-ink outline-none transition focus:border-gold'
+const wIdx = (valueKg, unit) => (unit === 'kg'
+  ? clamp(Math.round(valueKg) - KG_MIN, 0, KGS.length - 1)
+  : clamp(Math.round(valueKg * LB_PER_KG) - LB_MIN, 0, LBS.length - 1))
+const wFromIdx = (i, unit) => (unit === 'kg' ? KG_MIN + i : (LB_MIN + i) / LB_PER_KG)
+const toggleIn = (list, v) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
+const inputClass = 'w-full rounded-xl border border-white/10 bg-card px-4 py-3.5 text-base text-ink outline-none transition focus:border-gold'
 
-function Option({ selected, onClick, children }) {
-  return (
-    <button type="button" role="radio" aria-checked={selected} onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-4 text-left text-sm transition ${selected ? 'border-gold bg-gold/15' : 'border-white/10 bg-card hover:border-white/30'}`}>
-      {selected
-        ? <span className="grid h-4 w-4 place-items-center rounded-full border border-gold text-gold"><Check size={10} strokeWidth={3} /></span>
-        : <span className="h-4 w-4 rounded-full bg-mute/80" />}
-      {children}
-    </button>
-  )
-}
-
-function MultiChoice({ label, options, selected, onToggle, otherSelected, onToggleOther, otherValue, onOtherChange }) {
-  const choiceClass = (active) => `rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition ${active ? 'border-gold bg-gold/15 text-ink' : 'border-white/10 bg-card text-mute hover:border-white/30 hover:text-ink'}`
-
-  return (
-    <fieldset>
-      <legend className="mb-2 text-sm font-semibold">{label} <span className="font-normal text-mute">(optional, select all that apply)</span></legend>
-      <div className="grid grid-cols-2 gap-2">
-        {options.map((option) => (
-          <button key={option} type="button" aria-pressed={selected.includes(option)} onClick={() => onToggle(option)}
-            className={choiceClass(selected.includes(option))}>{option}</button>
-        ))}
-        <button type="button" aria-pressed={otherSelected} onClick={onToggleOther} className={choiceClass(otherSelected)}>Others</button>
-      </div>
-      {otherSelected && (
-        <input value={otherValue} onChange={(event) => onOtherChange(event.target.value)} maxLength={255}
-          aria-label={`Other ${label.toLowerCase()}`} placeholder={`Enter other ${label.toLowerCase()}`}
-          className={`${inputClass} mt-2`} />
-      )}
-    </fieldset>
-  )
-}
-
-function Toggle({ options, value, onChange }) {
-  return (
-    <div className="flex items-center gap-1 text-xs">
-      {options.map(([id, label]) => (
-        <button key={id} type="button" onClick={() => onChange(id)} className={`rounded-full px-3 py-1.5 transition ${value === id ? 'bg-white/10 font-semibold text-ink' : 'text-mute hover:text-ink'}`}>{label}</button>
-      ))}
-    </div>
-  )
-}
-
-const Nav = ({ onBack, onNext, nextLabel = 'Continue', disabled, last }) => (
-  <div className="mt-8 flex gap-3">
-    {onBack && <button type="button" onClick={onBack} className="flex-1 rounded-full border border-white/20 py-3 text-sm font-semibold transition hover:bg-white/5">Back</button>}
-    <button type="button" onClick={onNext} disabled={disabled} className="flex flex-[1.4] items-center justify-center gap-2 rounded-full bg-gold py-3 text-sm font-bold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-mute">
-      {nextLabel}{!last && <ArrowRight size={15} />}
-    </button>
-  </div>
-)
+const ANIMATION_CSS = `
+@keyframes ob-fwd { from { opacity: 0; transform: translateX(28px) } to { opacity: 1; transform: none } }
+@keyframes ob-back { from { opacity: 0; transform: translateX(-28px) } to { opacity: 1; transform: none } }
+.ob-fwd { animation: ob-fwd .28s ease both }
+.ob-back { animation: ob-back .28s ease both }
+@media (prefers-reduced-motion: reduce) { .ob-fwd, .ob-back { animation: none } }`
 
 export default function Onboarding() {
   const navigate = useNavigate()
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(0)   // 0 = welcome, 1..10 = questions
+  const dir = useRef(1)
+  const timer = useRef(null)
+  const scroller = useRef(null)
+  const fileRef = useRef(null)
+
   const [gender, setGender] = useState('')
+  const [goal, setGoal] = useState('')
+  const [level, setLevel] = useState('Beginner')
+  const [activityLevel, setActivityLevel] = useState('')
   const [birth, setBirth] = useState({ m: 5, d: 15, y: 2004 })
   const [heightCm, setHeightCm] = useState(170)
   const [heightUnit, setHeightUnit] = useState('ftin')
   const [weightKg, setWeightKg] = useState(70)
   const [weightUnit, setWeightUnit] = useState('kg')
-  const [goal, setGoal] = useState('')
-  const [level, setLevel] = useState('Beginner')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [activityLevel, setActivityLevel] = useState('')
-  const [targetWeightKg, setTargetWeightKg] = useState('')
+  const [targetWeightKg, setTargetWeightKg] = useState('')   // '' = not set
   const [allergies, setAllergies] = useState([])
   const [otherAllergy, setOtherAllergy] = useState('')
-  const [allergyOtherSelected, setAllergyOtherSelected] = useState(false)
+  const [allergyOther, setAllergyOther] = useState(false)
+  const [diets, setDiets] = useState([])
   const [healthConditions, setHealthConditions] = useState([])
   const [otherCondition, setOtherCondition] = useState('')
-  const [conditionOtherSelected, setConditionOtherSelected] = useState(false)
-  const [dietaryPreferences, setDietaryPreferences] = useState('')
+  const [conditionOther, setConditionOther] = useState(false)
+  const [phoneNumber, setPhoneNumber] = useState('')
   const [profilePicture, setProfilePicture] = useState(null)
+  const [photoUrl, setPhotoUrl] = useState('')
   const [pictureError, setPictureError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
 
+  /* ---------- navigation ---------- */
+  const go = (n) => { dir.current = n > step ? 1 : -1; setStep(n) }
+  // Single-choice screens move on by themselves a moment after you tap.
+  const advanceFrom = (from) => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => { dir.current = 1; setStep((s) => (s === from ? from + 1 : s)) }, 320)
+  }
+  useEffect(() => () => clearTimeout(timer.current), [])
+  useEffect(() => { scroller.current?.scrollTo?.({ top: 0 }) }, [step])
+  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl) }, [photoUrl])
+
+  /* ---------- derived values ---------- */
   const daysInMonth = new Date(birth.y, birth.m + 1, 0).getDate()
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  const days = range(1, daysInMonth)
   const setPart = (part) => (i) => setBirth((b) => {
     const next = { ...b, [part]: part === 'm' ? i : part === 'd' ? i + 1 : YEARS[i] }
     next.d = Math.min(next.d, new Date(next.y, next.m + 1, 0).getDate())
     return next
   })
+  const birthDate = `${birth.y}-${pad(birth.m + 1)}-${pad(birth.d)}`
+  const age = new Date().getFullYear() - birth.y - (new Date() < new Date(birth.y, birth.m, birth.d) ? 1 : 0)
 
   const cm = heightUnit === 'cm'
-  const heightIdx = cm ? clamp(heightCm - 100, 0, 150) : clamp(Math.round(heightCm / 2.54) - 48, 0, 47)
+  const heightIdx = cm ? clamp(heightCm - 100, 0, CMS.length - 1) : clamp(Math.round(heightCm / 2.54) - 48, 0, INCHES.length - 1)
   const setHeightIdx = (i) => setHeightCm(cm ? 100 + i : Math.round((48 + i) * 2.54))
 
   const kg = weightUnit === 'kg'
   const weightList = kg ? KGS : LBS
-  const weightIdx = clamp(kg ? Math.round(weightKg) - 20 : Math.round(weightKg * LB_PER_KG) - 44, 0, weightList.length - 1)
-  const setWeightIdx = (i) => {
-    const c = clamp(i, 0, weightList.length - 1)
-    setWeightKg(kg ? 20 + c : (44 + c) / LB_PER_KG)
-  }
   const bmi = weightKg / (heightCm / 100) ** 2
-  const toggleSelection = (setter) => (value) => setter((current) =>
-    current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
-  )
-
-  const birthDate = `${birth.y}-${pad(birth.m + 1)}-${pad(birth.d)}`
-  const age = new Date().getFullYear() - birth.y
-    - (new Date() < new Date(birth.y, birth.m, birth.d) ? 1 : 0)
   const tdee = calculateTdee({ gender, age, heightCm, weightKg, activityLevel })
+
+  const target = targetWeightKg === '' ? null : Number(targetWeightKg)
+  const diffKg = target == null ? 0 : target - weightKg
+  const diffShown = Math.round((kg ? Math.abs(diffKg) : Math.abs(diffKg) * LB_PER_KG) * 10) / 10
+  const weeks = Math.ceil(Math.abs(diffKg) / 0.5)
+  const targetBmi = target == null ? null : target / (heightCm / 100) ** 2
+  const quick = kg ? [-10, -5, 5, 10] : [-20, -10, 10, 20]
+  const setTargetBy = (delta) => setTargetWeightKg(clamp((weightKg + (kg ? delta : delta / LB_PER_KG)), KG_MIN, 250))
+
+  /* ---------- profile photo ---------- */
+  const setPicture = (event) => {
+    const file = event.target.files?.[0] ?? null
+    setPictureError('')
+    if (file && (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
+      setPictureError('Choose a JPG, PNG, or WebP image up to 5 MB.')
+      event.target.value = ''
+      setProfilePicture(null)
+      setPhotoUrl('')
+      return
+    }
+    setProfilePicture(file)
+    setPhotoUrl(file ? URL.createObjectURL(file) : '')
+  }
+  const removePicture = () => { setProfilePicture(null); setPhotoUrl(''); setPictureError(''); if (fileRef.current) fileRef.current.value = '' }
+
+  /* ---------- save ---------- */
   const finish = async () => {
     setSaving(true)
     setSaveError('')
@@ -156,14 +177,15 @@ export default function Onboarding() {
       phoneNumber: phoneNumber.trim(),
       activityLevel,
       tdee,
-      targetWeightKg: targetWeightKg === '' ? null : Math.round(Number(targetWeightKg) * 10) / 10,
-      allergies: [...allergies, ...(allergyOtherSelected && otherAllergy.trim() ? [otherAllergy.trim()] : [])],
-      healthConditions: [...healthConditions, ...(conditionOtherSelected && otherCondition.trim() ? [otherCondition.trim()] : [])],
-      dietaryPreferences: dietaryPreferences.trim(),
+      targetWeightKg: target == null ? null : Math.round(target * 10) / 10,
+      allergies: [...allergies, ...(allergyOther && otherAllergy.trim() ? [otherAllergy.trim()] : [])],
+      healthConditions: [...healthConditions, ...(conditionOther && otherCondition.trim() ? [otherCondition.trim()] : [])],
+      dietaryPreferences: diets.join(', '),
       completedAt: new Date().toISOString(),
     }
     const form = new FormData()
     Object.entries({
+      age,
       gender,
       phone_number: profile.phoneNumber,
       birth_date: birthDate,
@@ -184,7 +206,14 @@ export default function Onboarding() {
 
     try {
       const { data } = await api.post('/profile', form)
-      saveProfile({ ...profile, tdee: Number(data.profile.tdee) })
+      const saved = { ...profile, tdee: Number(data.profile.tdee) }
+      saveProfile(saved)
+      try {
+        // Progress: starting weight and daily targets. Never block finishing setup.
+        const rec = recommend(saved)
+        setTargets({ calories: rec?.calories, protein: rec?.protein })
+        logWeight(saved.weightKg)
+      } catch { /* progress is optional */ }
       navigate('/app', { replace: true })
     } catch (error) {
       const { fields, form: message } = errorsFrom(error)
@@ -194,177 +223,222 @@ export default function Onboarding() {
     }
   }
 
-  const colLabel = 'mb-1.5 text-center text-[10px] tracking-wider text-mute'
-  const setPicture = (event) => {
-    const file = event.target.files?.[0] ?? null
-    setPictureError('')
-    if (file && (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
-      setPictureError('Choose a JPG, PNG, or WebP image up to 5 MB.')
-      event.target.value = ''
-      setProfilePicture(null)
-      return
-    }
-    setProfilePicture(file)
-  }
+  /* ---------- footer button ---------- */
+  const optionalEmpty = (step === 7 && target == null)
+    || (step === 8 && !allergies.length && !allergyOther && !diets.length)
+    || (step === 9 && !healthConditions.length && !conditionOther)
+  const canNext = (step !== 1 || gender) && (step !== 2 || goal) && (step !== 4 || activityLevel)
+  const last = step === TOTAL
+  const next = () => { if (last) finish(); else go(step + 1) }
+  const label = step === 0 ? 'Get started' : last ? (saving ? 'Saving...' : 'Finish setup') : optionalEmpty ? 'Skip for now' : 'Continue'
+  const disabled = !canNext || saving || (last && (!activityLevel || Boolean(pictureError)))
+
+  const wheelCol = 'mb-2 flex h-8 items-center justify-between'
+  const picked = 'mt-3 text-center text-sm text-mute'
 
   return (
-    <div className="min-h-screen bg-[#0d0d0d] text-ink">
-      <div className="mx-auto max-w-xl px-5 py-6">
-        <header className="flex items-center justify-between">
-          <p className="flex items-center gap-2 text-lg font-bold"><img src={logo} alt="" className="h-7 w-auto" />AIVO</p>
-          {step === 1
-            ? <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold">Profile setup</span>
-            : <span className="text-[11px] tracking-wide text-mute">GETTING STARTED</span>}
-        </header>
+    <div className="min-h-screen bg-[#0d0d0d] text-ink sm:flex sm:items-center sm:justify-center sm:p-6">
+      <style>{ANIMATION_CSS}</style>
+      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-md flex-col overflow-hidden sm:h-[50rem] sm:min-h-0 sm:rounded-[2rem] sm:border sm:border-white/10 sm:bg-[#121212] sm:shadow-2xl" style={{ maxHeight: '100dvh' }}>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-56" style={{ background: 'radial-gradient(60% 100% at 50% 0%, rgba(245,184,46,.10), transparent)' }} />
 
-        <div className="mt-4 flex gap-1.5" aria-hidden="true">
-          {[0, 1, 2, 3].map((i) => <span key={i} className={`h-1 flex-1 rounded-full transition-colors ${i <= step ? 'bg-gold' : 'bg-white/15'}`} />)}
-        </div>
-        <p className="mt-3 text-[10px] font-semibold tracking-wide text-gold">STEP {step + 1} OF 4</p>
-
-        {step === 0 && (
-          <section>
-            <h1 className="mt-3 text-3xl font-bold">Let's get to know you.</h1>
-            <p className="mt-3 text-sm text-ink/80">First, let's start with some basic information about you.</p>
-            <p className="mt-6 text-sm font-bold">What is your gender?</p>
-            <div role="radiogroup" className="mt-3 space-y-3">
-              {GENDERS.map((g) => <Option key={g} selected={gender === g} onClick={() => setGender(g)}>{g}</Option>)}
+        {/* top bar */}
+        {step > 0 && (
+          <header className="relative flex items-center gap-4 px-5 pt-5">
+            <button type="button" onClick={() => go(step - 1)} aria-label="Back" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/5 transition hover:bg-white/10"><ChevronLeft size={22} /></button>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuemin={1} aria-valuemax={TOTAL} aria-valuenow={step} aria-label="Setup progress">
+              <div className="h-full rounded-full bg-gold transition-all duration-500" style={{ width: `${(step / TOTAL) * 100}%` }} />
             </div>
-            <Nav onNext={() => setStep(1)} disabled={!gender} />
-          </section>
+            <span className="w-10 shrink-0 text-right text-xs font-semibold text-mute">{step}/{TOTAL}</span>
+          </header>
         )}
 
-        {step === 1 && (
-          <section>
-            <h1 className="mt-3 text-3xl font-bold">Let's get to know you.</h1>
-            <p className="mt-2 text-sm text-ink/80">Scroll to select your details.</p>
-            <hr className="my-5 border-white/10" />
+        {/* screen */}
+        <div ref={scroller} className="relative flex-1 overflow-y-auto px-5 pb-6 pt-6">
+          <div key={step} className={dir.current === 1 ? 'ob-fwd' : 'ob-back'}>
 
-            <h2 className="text-sm font-bold">Birthday</h2>
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              <div><p className={colLabel}>MONTH</p><WheelPicker label="Month" options={MONTHS} index={birth.m} onChange={setPart('m')} /></div>
-              <div><p className={colLabel}>DAY</p><WheelPicker label="Day" options={days} index={birth.d - 1} onChange={setPart('d')} /></div>
-              <div><p className={colLabel}>YEAR</p><WheelPicker label="Year" options={YEARS} index={YEARS.indexOf(birth.y)} onChange={setPart('y')} /></div>
-            </div>
-            <p className="mt-2 text-[11px] text-mute">Selected: {MONTHS[birth.m]} {birth.d}, {birth.y} · Age {age}</p>
-
-            <div className="mt-6 flex items-center justify-between">
-              <h2 className="text-sm font-bold">Height</h2>
-              <Toggle options={[['ftin', 'Feet / Inches'], ['cm', 'CM']]} value={heightUnit} onChange={setHeightUnit} />
-            </div>
-            <div className="mt-3">
-              <WheelPicker big rows={5} label="Height" options={cm ? CMS : INCHES} index={heightIdx} onChange={setHeightIdx} format={(n) => (cm ? `${n} cm` : fmtIn(n))} />
-            </div>
-
-            <div className="mt-6 flex items-center justify-between">
-              <h2 className="text-sm font-bold">Current weight</h2>
-              <Toggle options={[['kg', 'kg'], ['lb', 'lb']]} value={weightUnit} onChange={setWeightUnit} />
-            </div>
-            <div className="mt-3">
-              <WheelPicker big rows={5} label="Weight" options={weightList} index={weightIdx} onChange={setWeightIdx}
-                format={(n) => `${n} ${weightUnit}`}
-                renderSelected={(n) => <><span>{n}</span><span className="text-xs font-semibold text-gold">{weightUnit}</span></>} />
-            </div>
-            <div className="mt-2 flex items-center justify-between">
-              <p className="text-[11px] text-mute">Range: {weightList[0]}–{weightList[weightList.length - 1]} {weightUnit}</p>
-              <div className="flex gap-2 text-xs">
-                <button type="button" onClick={() => setWeightIdx(weightIdx - 5)} className="rounded-full border border-white/20 px-4 py-1.5 hover:bg-white/5">− 5</button>
-                <button type="button" onClick={() => setWeightIdx(weightIdx + 5)} className="rounded-full border border-white/20 px-4 py-1.5 hover:bg-white/5">+ 5</button>
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-xl border border-gold/40 bg-gold/10 p-4">
-              <p className="text-sm text-gold">Your estimated BMI</p>
-              <p className="mt-1 text-2xl font-bold">{bmi.toFixed(1)}</p>
-              <p className="mt-1 text-[11px] text-ink/80">Calculated using your selected height and weight in metric units.</p>
-            </div>
-            <Nav onBack={() => setStep(0)} onNext={() => setStep(2)} />
-          </section>
-        )}
-
-        {step === 2 && (
-          <section>
-            <h1 className="mt-3 text-3xl font-bold">What is your goal?</h1>
-            <p className="mt-3 text-sm text-ink/80">We'll use your preferences to personalize your plan.</p>
-            <div role="radiogroup" className="mt-5 space-y-3">
-              {GOALS.map((g) => <Option key={g} selected={goal === g} onClick={() => setGoal(g)}>{g}</Option>)}
-            </div>
-            <h2 className="mt-6 text-sm font-bold">Your fitness experience</h2>
-            <div role="radiogroup" className="mt-3 grid grid-cols-3 gap-3">
-              {LEVELS.map((l) => (
-                <button key={l} type="button" role="radio" aria-checked={level === l} onClick={() => setLevel(l)}
-                  className={`rounded-xl border py-3 text-xs font-semibold transition ${level === l ? 'border-gold bg-gold/15' : 'border-white/10 bg-card hover:border-white/30'}`}>{l}</button>
-              ))}
-            </div>
-            <label className="mt-6 block space-y-1.5 text-sm font-semibold">
-              Activity level
-              <select value={activityLevel} onChange={(e) => setActivityLevel(e.target.value)} className={inputClass}>
-                <option value="">Select your typical activity</option>
-                {ACTIVITY_LEVELS.map((item) => <option key={item} value={item} className="bg-card">{item}</option>)}
-              </select>
-            </label>
-            {tdee !== null && (
-              <div className="mt-4 rounded-xl border border-gold/40 bg-gold/10 p-4">
-                <p className="text-sm text-gold">Estimated daily energy needs (TDEE)</p>
-                <p className="mt-1 text-2xl font-bold">{tdee.toLocaleString()} kcal/day</p>
-                <p className="mt-1 text-[11px] text-ink/80">
-                  Estimated using the Mifflin-St Jeor equation and your selected activity level.
-                  {gender === 'Prefer not to say' && ' For gender-neutral estimation, the midpoint of the two BMR adjustments is used.'}
-                </p>
+            {step === 0 && (
+              <div className="flex min-h-[60vh] flex-col justify-center sm:min-h-[34rem]">
+                <p className="flex items-center gap-2 text-lg font-bold"><img src={logo} alt="" className="h-9 w-auto" />AIVO</p>
+                <Screen title="Let's build your plan." subtitle="Answer a few quick questions and AIVO will set up workouts and meals made for you.">
+                  <ul className="space-y-4">
+                    {[
+                      [Clock, 'About 2 minutes', 'Ten quick screens, one question each.'],
+                      [MousePointerClick, 'Just tap to choose', 'Almost no typing. Scroll or tap your answers.'],
+                      [ShieldCheck, 'Private and flexible', 'You can change any answer later.'],
+                    ].map(([Icon, title, text]) => (
+                      <li key={title} className="flex items-center gap-4">
+                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gold/10 text-gold"><Icon size={22} /></span>
+                        <span><span className="block text-[15px] font-semibold">{title}</span><span className="block text-xs text-mute">{text}</span></span>
+                      </li>
+                    ))}
+                  </ul>
+                </Screen>
               </div>
             )}
-            <Nav onBack={() => setStep(1)} onNext={() => setStep(3)} disabled={!goal} />
-          </section>
-        )}
 
-        {step === 3 && (
-          <section>
-            <h1 className="mt-3 text-3xl font-bold">A few more details.</h1>
-            <p className="mt-3 text-sm text-ink/80">These optional details help personalize your profile and recommendations. Your address is not collected.</p>
-
-            <div className="mt-5 space-y-4">
-              <label className="block space-y-1.5 text-sm font-semibold">
-                Phone number <span className="font-normal text-mute">(optional)</span>
-                <input type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} maxLength={255} className={inputClass} />
-              </label>
-
-              <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label htmlFor="target-weight" className="text-sm font-semibold">Target weight <span className="font-normal text-mute">(optional)</span></label>
-                  <Toggle options={[['kg', 'kg'], ['lb', 'lb']]} value={weightUnit} onChange={setWeightUnit} />
+            {step === 1 && (
+              <Screen title="What's your gender?" subtitle="We use this to estimate how many calories you need.">
+                <div role="radiogroup" aria-label="Gender" className="space-y-3">
+                  {GENDERS.map((g) => <OptionCard key={g.value} glyph={g.glyph} icon={g.icon} title={g.value} selected={gender === g.value}
+                    onClick={() => { setGender(g.value); advanceFrom(1) }} />)}
                 </div>
-                <input id="target-weight" type="number" min={kg ? 20 : 44} max={kg ? 350 : 772} step="0.1"
-                  value={targetWeightKg === '' ? '' : kg ? targetWeightKg : Math.round(targetWeightKg * LB_PER_KG * 10) / 10}
-                  onChange={(e) => setTargetWeightKg(e.target.value === '' ? '' : kg ? e.target.value : String(Number(e.target.value) / LB_PER_KG))}
-                  className={inputClass} />
-              </div>
+              </Screen>
+            )}
 
-              <div className="space-y-2">
-                <label htmlFor="profile-picture" className="block text-sm font-semibold">Profile picture <span className="font-normal text-mute">(optional, JPG/PNG/WebP up to 5 MB)</span></label>
-                <input id="profile-picture" type="file" accept="image/jpeg,image/png,image/webp" onChange={setPicture}
-                  className="block w-full text-sm text-mute file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-ink hover:file:bg-white/20" />
-                {pictureError && <p role="alert" className="text-xs text-danger">{pictureError}</p>}
-                {profilePicture && <p className="text-xs text-mute">Selected: {profilePicture.name}</p>}
-              </div>
+            {step === 2 && (
+              <Screen title="What's your main goal?" subtitle="Pick the one that matters most right now.">
+                <div role="radiogroup" aria-label="Goal" className="space-y-3">
+                  {GOALS.map((g) => <OptionCard key={g.value} icon={g.icon} title={g.value} desc={g.desc} selected={goal === g.value}
+                    onClick={() => { setGoal(g.value); advanceFrom(2) }} />)}
+                </div>
+              </Screen>
+            )}
 
-              <MultiChoice label="Food allergies" options={ALLERGIES} selected={allergies}
-                onToggle={toggleSelection(setAllergies)} otherSelected={allergyOtherSelected}
-                onToggleOther={() => setAllergyOtherSelected((selected) => !selected)}
-                otherValue={otherAllergy} onOtherChange={setOtherAllergy} />
-              <MultiChoice label="Health conditions" options={HEALTH_CONDITIONS} selected={healthConditions}
-                onToggle={toggleSelection(setHealthConditions)} otherSelected={conditionOtherSelected}
-                onToggleOther={() => setConditionOtherSelected((selected) => !selected)}
-                otherValue={otherCondition} onOtherChange={setOtherCondition} />
-              <label className="block space-y-1.5 text-sm font-semibold">
-                Dietary preferences <span className="font-normal text-mute">(optional)</span>
-                <textarea value={dietaryPreferences} onChange={(e) => setDietaryPreferences(e.target.value)} rows={2} className={inputClass} />
-              </label>
-            </div>
+            {step === 3 && (
+              <Screen title="How experienced are you?" subtitle="This decides how hard your first workouts will be.">
+                <div role="radiogroup" aria-label="Experience" className="space-y-3">
+                  {LEVELS.map((l) => <OptionCard key={l.value} icon={l.icon} title={l.value} desc={l.desc} selected={level === l.value} onClick={() => setLevel(l.value)} />)}
+                </div>
+              </Screen>
+            )}
 
-            {saveError && <p role="alert" className="mt-4 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{saveError}</p>}
-            <Nav onBack={() => setStep(2)} onNext={finish} nextLabel={saving ? 'Saving...' : 'Finish setup'} disabled={!activityLevel || saving || Boolean(pictureError)} last />
-          </section>
-        )}
+            {step === 4 && (
+              <Screen title="How active are you day to day?" subtitle="Think about a normal week, not just your workouts.">
+                <div role="radiogroup" aria-label="Activity level" className="space-y-3">
+                  {ACTIVITY.map((a) => <OptionCard key={a.value} icon={a.icon} title={a.value} desc={a.desc} selected={activityLevel === a.value} onClick={() => setActivityLevel(a.value)} />)}
+                </div>
+              </Screen>
+            )}
+
+            {step === 5 && (
+              <Screen title="When were you born?" subtitle="Scroll or tap to choose.">
+                <div className="grid grid-cols-[1.5fr_1fr_1.1fr] gap-3">
+                  <div><p className="mb-2 text-center text-[11px] font-semibold tracking-wider text-mute">MONTH</p><WheelPicker label="Month" options={MONTHS} index={birth.m} onChange={setPart('m')} /></div>
+                  <div><p className="mb-2 text-center text-[11px] font-semibold tracking-wider text-mute">DAY</p><WheelPicker label="Day" options={days} index={birth.d - 1} onChange={setPart('d')} /></div>
+                  <div><p className="mb-2 text-center text-[11px] font-semibold tracking-wider text-mute">YEAR</p><WheelPicker label="Year" options={YEARS} index={YEARS.indexOf(birth.y)} onChange={setPart('y')} /></div>
+                </div>
+                <p className={picked}>{MONTHS[birth.m]} {birth.d}, {birth.y} <span className="text-gold">· {age} years old</span></p>
+              </Screen>
+            )}
+
+            {step === 6 && (
+              <Screen title="Your height and weight" subtitle="Scroll or tap a number. You can switch units anytime.">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className={wheelCol}><h2 className="text-sm font-bold">Height</h2><Segmented label="Height unit" options={[['ftin', 'ft/in'], ['cm', 'cm']]} value={heightUnit} onChange={setHeightUnit} /></div>
+                    <WheelPicker label="Height" options={cm ? CMS : INCHES} index={heightIdx} onChange={setHeightIdx} format={(n) => (cm ? `${n} cm` : fmtIn(n))} />
+                  </div>
+                  <div>
+                    <div className={wheelCol}><h2 className="text-sm font-bold">Weight</h2><Segmented label="Weight unit" options={[['kg', 'kg'], ['lb', 'lb']]} value={weightUnit} onChange={setWeightUnit} /></div>
+                    <WheelPicker label="Weight" options={weightList} index={wIdx(weightKg, weightUnit)} onChange={(i) => setWeightKg(wFromIdx(i, weightUnit))}
+                      format={(n) => `${n} ${weightUnit}`}
+                      renderSelected={(n) => <><span>{n}</span><span className="text-xs font-semibold text-gold">{weightUnit}</span></>} />
+                  </div>
+                </div>
+                <div className="mt-5"><BmiMeter bmi={bmi} /></div>
+              </Screen>
+            )}
+
+            {step === 7 && (
+              <Screen title="Do you have a target weight?" subtitle="Optional. Tap a quick pick, scroll to a number, or skip.">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm text-mute">Now: <span className="font-semibold text-ink">{kg ? `${Math.round(weightKg)} kg` : `${Math.round(weightKg * LB_PER_KG)} lb`}</span></p>
+                  <Segmented label="Weight unit" options={[['kg', 'kg'], ['lb', 'lb']]} value={weightUnit} onChange={setWeightUnit} />
+                </div>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {quick.map((d) => (
+                    <Chip key={d} active={target != null && Math.abs(diffKg - (kg ? d : d / LB_PER_KG)) < 0.3} onClick={() => setTargetBy(d)}>{d > 0 ? `+${d}` : d} {weightUnit}</Chip>
+                  ))}
+                  <Chip active={target != null && Math.abs(diffKg) < 0.3} onClick={() => setTargetWeightKg(weightKg)}>Stay the same</Chip>
+                </div>
+                <WheelPicker big label="Target weight" options={weightList} index={wIdx(target ?? weightKg, weightUnit)} onChange={(i) => setTargetWeightKg(wFromIdx(i, weightUnit))}
+                  format={(n) => `${n} ${weightUnit}`}
+                  renderSelected={(n) => <><span>{n}</span><span className="text-xs font-semibold text-gold">{weightUnit}</span></>} />
+                <div className="mt-4 min-h-[3.5rem] text-center text-sm" aria-live="polite">
+                  {target == null && <p className="text-mute">No target yet. You can set one later.</p>}
+                  {target != null && Math.abs(diffKg) < 0.5 && <p className="text-ink/90">You'll aim to stay at your current weight.</p>}
+                  {target != null && Math.abs(diffKg) >= 0.5 && (
+                    <p className="text-ink/90"><span className="font-semibold text-gold">{diffShown} {weightUnit}</span> to {diffKg < 0 ? 'lose' : 'gain'}. About {weeks} weeks at a steady, healthy pace.</p>
+                  )}
+                  {targetBmi != null && targetBmi < 18.5 && <p className="mt-1 text-xs text-amber-400">This target is below a healthy BMI. A higher number is safer.</p>}
+                  {target != null && goal === 'Lose weight' && diffKg > 0.5 && <p className="mt-1 text-xs text-amber-400">Your goal is to lose weight, but this target is higher than now.</p>}
+                </div>
+              </Screen>
+            )}
+
+            {step === 8 && (
+              <Screen title="Any food allergies or diet?" subtitle="Optional. Tap everything that applies, or skip.">
+                <h2 className="mb-2.5 text-sm font-bold">Food allergies</h2>
+                <div className="flex flex-wrap gap-2">
+                  {ALLERGIES.map((a) => <Chip key={a} active={allergies.includes(a)} onClick={() => setAllergies((l) => toggleIn(l, a))}>{a}</Chip>)}
+                  <Chip active={allergyOther} onClick={() => setAllergyOther((v) => !v)}>Other</Chip>
+                </div>
+                {allergyOther && <input value={otherAllergy} onChange={(e) => setOtherAllergy(e.target.value)} maxLength={255} aria-label="Other allergy" placeholder="Type your allergy" className={`${inputClass} mt-3`} />}
+                <h2 className="mb-2.5 mt-7 text-sm font-bold">Eating style</h2>
+                <div className="flex flex-wrap gap-2">
+                  {DIETS.map((d) => <Chip key={d} active={diets.includes(d)} onClick={() => setDiets((l) => toggleIn(l, d))}>{d}</Chip>)}
+                </div>
+              </Screen>
+            )}
+
+            {step === 9 && (
+              <Screen title="Any health conditions?" subtitle="Optional. This helps keep your plan safe. Tap all that apply, or skip.">
+                <div role="group" aria-label="Health conditions" className="space-y-2.5">
+                  {HEALTH_CONDITIONS.map((c) => <OptionCard key={c} multi title={c} selected={healthConditions.includes(c)} onClick={() => setHealthConditions((l) => toggleIn(l, c))} />)}
+                  <OptionCard multi title="Other" selected={conditionOther} onClick={() => setConditionOther((v) => !v)} />
+                </div>
+                {conditionOther && <input value={otherCondition} onChange={(e) => setOtherCondition(e.target.value)} maxLength={255} aria-label="Other health condition" placeholder="Type your condition" className={`${inputClass} mt-3`} />}
+                <p className="mt-4 text-xs text-mute">AIVO gives general guidance, not medical advice. Check with your doctor before starting a new program.</p>
+              </Screen>
+            )}
+
+            {step === 10 && (
+              <Screen title="Almost done!" subtitle="Add a photo and phone number if you like. Both are optional.">
+                <div className="flex flex-col items-center">
+                  <button type="button" onClick={() => fileRef.current?.click()} aria-label={photoUrl ? 'Change profile photo' : 'Add profile photo'}
+                    className="relative grid h-28 w-28 place-items-center overflow-hidden rounded-full border-2 border-dashed border-gold/50 bg-card transition hover:border-gold">
+                    {photoUrl ? <img src={photoUrl} alt="Your profile" className="h-full w-full object-cover" /> : <User size={44} className="text-mute" />}
+                    <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/60 py-1.5 text-[11px] font-semibold text-gold"><Camera size={12} />{photoUrl ? 'Change' : 'Add photo'}</span>
+                  </button>
+                  <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={setPicture} className="hidden" aria-label="Profile picture" />
+                  {photoUrl && <button type="button" onClick={removePicture} className="mt-2 text-xs text-mute underline hover:text-ink">Remove photo</button>}
+                  {pictureError && <p role="alert" className="mt-2 text-xs text-danger">{pictureError}</p>}
+                </div>
+
+                <label className="mt-6 block space-y-1.5 text-sm font-semibold">
+                  Phone number <span className="font-normal text-mute">(optional)</span>
+                  <input type="tel" inputMode="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} maxLength={255} className={inputClass} />
+                </label>
+
+                <div className="mt-6 rounded-2xl border border-gold/30 bg-gold/5 p-4">
+                  <p className="text-sm font-bold text-gold">Your starting point</p>
+                  <dl className="mt-3 space-y-2 text-sm">
+                    {[
+                      ['Goal', goal],
+                      ['Experience', level],
+                      ['Activity', activityLevel],
+                      ['Weight', `${kg ? `${Math.round(weightKg)} kg` : `${Math.round(weightKg * LB_PER_KG)} lb`}${target != null ? ` to ${kg ? `${Math.round(target)} kg` : `${Math.round(target * LB_PER_KG)} lb`}` : ''}`],
+                      ['Body type (BMI)', `${bmi.toFixed(1)} · ${bmiBand(bmi).label}`],
+                      ['Daily energy needs', tdee == null ? '--' : `${tdee.toLocaleString()} kcal`],
+                    ].map(([k, v]) => <div key={k} className="flex justify-between gap-4"><dt className="text-mute">{k}</dt><dd className="text-right font-semibold">{v}</dd></div>)}
+                  </dl>
+                </div>
+                {saveError && <p role="alert" className="mt-4 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{saveError}</p>}
+              </Screen>
+            )}
+          </div>
+        </div>
+
+        {/* bottom action bar */}
+        <footer className="relative border-t border-white/10 bg-[#0f0f0f]/90 px-5 pt-4 backdrop-blur" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+          <button type="button" onClick={next} disabled={disabled}
+            className={`flex h-14 w-full items-center justify-center gap-2 rounded-full text-base font-bold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-mute ${optionalEmpty ? 'border border-white/20 bg-transparent text-ink hover:bg-white/5' : 'bg-gold text-black hover:brightness-110'}`}>
+            {saving && <Loader2 size={18} className="animate-spin" aria-hidden="true" />}
+            {label}
+            {!saving && (last ? <Check size={18} /> : <ArrowRight size={18} />)}
+          </button>
+        </footer>
       </div>
     </div>
   )
