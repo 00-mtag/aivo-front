@@ -4,7 +4,7 @@ import AuthLayout from '../components/AuthLayout'
 import TextField from '../components/TextField'
 import Button from '../components/Button'
 import GoogleButton from '../components/GoogleButton'
-import { errorsFrom, googleLoginRequest, loginRequest, saveSession } from '../lib/api'
+import { errorsFrom, loginRequest, saveSession } from '../lib/api'
 import LoadingScreen from '../components/LoadingScreen'
 import { markPanelLoaded } from '../lib/usePanelLoader'
 
@@ -19,22 +19,6 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
-
-  const signInWithGoogle = async (credential) => {
-    setBusy(true)
-    setFormError('')
-    setNotice('')
-    try {
-      const { data } = await googleLoginRequest(credential)
-      saveSession(data)
-      markPanelLoaded('dashboard')
-      setSignedIn(true)
-    } catch (err) {
-      setFormError(errorsFrom(err).form)
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -66,7 +50,7 @@ export default function Login() {
       </div>
 
       <div className="rise mt-6 space-y-5" style={{ animationDelay: '60ms' }}>
-        <GoogleButton onCredential={signInWithGoogle} />
+        <GoogleButton onClick={() => setNotice('Google sign-in is not set up yet. Please use email for now.')} />
         <div className="flex items-center gap-3 text-[11px] font-medium text-ink/90"><span className="h-px flex-1 bg-white/70" />or continue with email<span className="h-px flex-1 bg-white/70" /></div>
       </div>
 
@@ -79,7 +63,7 @@ export default function Login() {
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-3.5 w-3.5 accent-gold" />
             Remember me
           </label>
-          <Link to="/forgot-password" state={{ email: form.email.trim() }} className="font-semibold hover:text-gold hover:underline">Forgot Password?</Link>
+          <button type="button" onClick={() => setNotice('Password reset is not set up yet.')} className="font-semibold hover:text-gold hover:underline">Forgot Password?</button>
         </div>
 
         {formError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{formError}</p>}
