@@ -5,7 +5,7 @@ import TextField from '../components/TextField'
 import Button from '../components/Button'
 import { errorsFrom, forgotPasswordRequest } from '../lib/api'
 
-const COOLDOWN = 30
+const COOLDOWN = 60
 
 export default function ForgotPassword() {
   const location = useLocation()
@@ -36,7 +36,7 @@ export default function ForgotPassword() {
       await forgotPasswordRequest({ email: addr })
       setSent(true)
       setWait(COOLDOWN)
-      if (isResend) setNotice('Another link is on its way. Use the most recent one.')
+      if (isResend) setNotice('Another code is on its way. Use the most recent one.')
     } catch (err) {
       const r = errorsFrom(err)
       setErrors(r.fields); setFormError(r.form)
@@ -52,24 +52,26 @@ export default function ForgotPassword() {
       <AuthLayout>
         <div className="rise">
           <p className="text-sm font-semibold text-gold">Check your inbox</p>
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Reset link sent</h2>
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Verification code sent</h2>
           <p className="mt-1 text-xs text-ink/90">
-            If an account exists for <span className="font-semibold break-all">{email.trim()}</span>, a reset link is on its way. It expires in 30 minutes.
+            If an account exists for <span className="font-semibold break-all">{email.trim()}</span>, a six-digit code is on its way. It expires in 10 minutes.
           </p>
         </div>
 
         <div className="rise mt-6 space-y-5" style={{ animationDelay: '60ms' }}>
-          <p className="text-sm text-ink/90">Nothing there? Check your spam folder, or resend the link.</p>
+          <p className="text-sm text-ink/90">Check your spam folder if it isn’t in your inbox.</p>
 
           {formError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{formError}</p>}
           {notice && <p role="status" className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm text-gold">{notice}</p>}
 
           <Button type="button" loading={busy} disabled={wait > 0 || busy} onClick={() => request(true)}>
-            {wait > 0 ? `Resend in ${wait}s` : 'Resend link'}
+            {wait > 0 ? `Resend in ${wait}s` : 'Resend code'}
           </Button>
         </div>
 
         <p className="rise mt-6 text-center text-sm" style={{ animationDelay: '120ms' }}>
+          <Link to={`/reset-password?email=${encodeURIComponent(email.trim())}`} className="font-bold text-gold hover:underline">Enter verification code</Link>
+          <span className="mx-2 text-ink/50">|</span>
           <button type="button" onClick={() => { setSent(false); setNotice(''); setFormError('') }} className="font-semibold hover:text-gold hover:underline">
             Use a different email
           </button>
@@ -85,7 +87,7 @@ export default function ForgotPassword() {
       <div className="rise">
         <p className="text-sm font-semibold text-gold">Account recovery</p>
         <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Forgot your <span className="text-gold">password?</span></h2>
-        <p className="mt-1 text-xs text-ink/90">Enter the email you signed up with and we’ll send you a link to reset it.</p>
+        <p className="mt-1 text-xs text-ink/90">Enter the email you signed up with and we’ll send you a six-digit verification code.</p>
       </div>
 
       <form onSubmit={submit} noValidate className="rise mt-6 space-y-5" style={{ animationDelay: '60ms' }}>
@@ -94,7 +96,7 @@ export default function ForgotPassword() {
         {formError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{formError}</p>}
         {notice && <p role="status" className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm text-gold">{notice}</p>}
 
-        <Button type="submit" loading={busy}>Send reset link</Button>
+        <Button type="submit" loading={busy}>Send verification code</Button>
       </form>
 
       <p className="mt-6 text-center text-sm">

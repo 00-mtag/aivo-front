@@ -20,6 +20,7 @@ export const googleLoginRequest = (credential) => api.post('/auth/google', { cre
 export const registerRequest = ({ username, email, phone, password }) =>
   api.post('/register', { username, email, ...(phone ? { phone } : {}), password, password_confirmation: password })
 export const forgotPasswordRequest = (payload) => api.post('/forgot-password', payload)
+export const resetPasswordRequest = (payload) => api.post('/reset-password', payload)
 export const saveSession = (data) => {
   const token = data?.token ?? data?.access_token
   if (token) localStorage.setItem('aivo_token', token)

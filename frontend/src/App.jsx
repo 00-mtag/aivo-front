@@ -10,6 +10,7 @@ import { isLoggedIn } from './lib/api'
 import { hasProfile } from './lib/profile'
 import Progress from './pages/Progress'
 import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 
 // Logged in but no profile yet -> onboarding comes first; once done, go to the dashboard.
 const Protected = ({ children }) => {
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/login" element={<Guest><Login /></Guest>} />
       <Route path="/register" element={<Guest><Register /></Guest>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/onboarding" element={<Onboard><Onboarding /></Onboard>} />
       <Route path="/app" element={<Protected><Dashboard /></Protected>} />
       <Route path="/app/workouts" element={<Protected><Workouts /></Protected>} />
