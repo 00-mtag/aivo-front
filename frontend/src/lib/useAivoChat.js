@@ -23,27 +23,66 @@ export default function useAivoChat(context) {
   const [historyError, setHistoryError] = useState('')
   const [deletingConversationId, setDeletingConversationId] = useState(null)
   const sending = useRef(false)
+  const selectionRequest = useRef(0)
+  const [loadedCategory, setLoadedCategory] = useState(null)
   const page = context?.page ?? 'fitness and nutrition'
+  const category = context?.category ?? 'general'
   const persistConversations = context?.persistConversations === true
+  const storageKey = `aivo-active-conversation:${category}`
+  const hasLoadedCategory = !persistConversations || loadedCategory === category
 
   useEffect(() => {
     if (!persistConversations) return undefined
 
     let active = true
-    api.get('/ai-chat/conversations')
-      .then(({ data }) => {
-        if (active) setConversations(data.conversations ?? [])
+    const requestId = ++selectionRequest.current
+    const savedConversationId = window.localStorage.getItem(storageKey)
+
+    api.get('/ai-chat/conversations', { params: { category } })
+      .then(async ({ data }) => {
+        if (!active) return
+        const savedConversations = data.conversations ?? []
+        setConversations(savedConversations)
+        const selectedConversation = savedConversationId === 'new'
+          ? null
+          : savedConversations.find((item) => String(item.conversation_id) === savedConversationId) ?? savedConversations[0]
+        if (!selectedConversation || requestId !== selectionRequest.current) {
+          setMessages([])
+          setActiveConversationId(null)
+          setError('')
+          setHistoryError('')
+          setLoadedCategory(category)
+          return
+        }
+
+        const { data: detail } = await api.get(`/ai-chat/conversations/${selectedConversation.conversation_id}`)
+        if (!active || requestId !== selectionRequest.current) return
+        setActiveConversationId(detail.conversation.conversation_id)
+        setMessages((detail.conversation.messages ?? []).map((item) => ({
+          role: item.sender === 'assistant' ? 'assistant' : 'user',
+          content: item.content,
+        })))
+        setError('')
+        setHistoryError('')
+        window.localStorage.setItem(storageKey, String(detail.conversation.conversation_id))
+        setLoadedCategory(category)
       })
       .catch((err) => {
-        if (active) setHistoryError(err.response?.data?.message || 'Could not load saved conversations.')
+        if (active && requestId === selectionRequest.current) {
+          setMessages([])
+          setActiveConversationId(null)
+          setError('')
+          setHistoryError(err.response?.data?.message || 'Could not load saved conversations.')
+          setLoadedCategory(category)
+        }
       })
 
     return () => { active = false }
-  }, [persistConversations])
+  }, [persistConversations, category, storageKey])
 
   const send = async (value) => {
     const message = value.trim()
-    if (!message || sending.current) return
+    if (!message || sending.current || !hasLoadedCategory) return
 
     sending.current = true
     const history = [...messages, { role: 'user', content: message }]
@@ -54,12 +93,16 @@ export default function useAivoChat(context) {
     const contextDetails = context?.data
       ? `\n\nCurrent ${page} page data (use only when relevant):\n${JSON.stringify(context.data)}`
       : ''
+    const workoutScheduleGuidance = page === 'Workout plans'
+      ? `\n\nWhen the user requests a workout plan, show a seven-day schedule with one named weekday per line. Schedule exactly the requested number of training days and explicitly label every other day "Rest". For three training days with no preferred weekdays, use Monday, Wednesday, and Saturday. Put 5 to 8 distinct main exercises on each training day, adapting the workload safely for the user's level. Do not count warm-ups, cool-downs, or general advice as exercises. Preserve these weekday labels and exercise names in the answer so the plan can be saved accurately.`
+      : ''
 
     try {
       const { data } = await api.post('/ai/chat', {
-        system_prompt: `${BASE_PROMPT}\n\nThe user is chatting from the ${page} page. Tailor your answer to this page when relevant.${contextDetails}`,
+        system_prompt: `${BASE_PROMPT}\n\nThe user is chatting from the ${page} page. Tailor your answer to this page when relevant.${workoutScheduleGuidance}${contextDetails}`,
         message,
         messages: history,
+        ...(persistConversations ? { category } : {}),
         ...(persistConversations && activeConversationId ? { conversation_id: activeConversationId } : {}),
       })
       if (typeof data?.message !== 'string' || !data.message.trim()) {
@@ -68,6 +111,7 @@ export default function useAivoChat(context) {
       setMessages((current) => [...current, { role: 'assistant', content: data.message }])
       if (persistConversations && data.conversation_id) {
         setActiveConversationId(data.conversation_id)
+        window.localStorage.setItem(storageKey, String(data.conversation_id))
         setConversations((current) => {
           const existing = current.find((item) => String(item.conversation_id) === String(data.conversation_id))
           const conversation = {
@@ -89,30 +133,40 @@ export default function useAivoChat(context) {
 
   const newChat = () => {
     if (sending.current) return
+    selectionRequest.current++
     setMessages([])
     setActiveConversationId(null)
     setError('')
     setHistoryError('')
+    setLoadedCategory(category)
+    if (persistConversations) window.localStorage.setItem(storageKey, 'new')
   }
 
   const selectConversation = async (conversationId) => {
     if (busy) return
+    const requestId = ++selectionRequest.current
     setHistoryError('')
     try {
       const { data } = await api.get(`/ai-chat/conversations/${conversationId}`)
+      if (requestId !== selectionRequest.current) return
       setActiveConversationId(data.conversation.conversation_id)
+      window.localStorage.setItem(storageKey, String(data.conversation.conversation_id))
       setMessages((data.conversation.messages ?? []).map((item) => ({
         role: item.sender === 'assistant' ? 'assistant' : 'user',
         content: item.content,
       })))
       setError('')
+      setLoadedCategory(category)
     } catch (err) {
-      setHistoryError(err.response?.data?.message || 'Could not open this conversation.')
+      if (requestId === selectionRequest.current) {
+        setHistoryError(err.response?.data?.message || 'Could not open this conversation.')
+      }
     }
   }
 
   const deleteConversation = async (conversationId) => {
     if (busy || deletingConversationId) return
+    selectionRequest.current++
     setDeletingConversationId(conversationId)
     setHistoryError('')
     try {
@@ -122,6 +176,7 @@ export default function useAivoChat(context) {
         setActiveConversationId(null)
         setMessages([])
         setError('')
+        window.localStorage.setItem(storageKey, 'new')
       }
     } catch (err) {
       setHistoryError(err.response?.data?.message || 'Could not delete this conversation.')
@@ -137,9 +192,12 @@ export default function useAivoChat(context) {
     send,
     newChat,
     page,
-    conversations,
-    activeConversationId,
-    historyError,
+    category,
+    persistConversations,
+    historyLoading: persistConversations && !hasLoadedCategory,
+    conversations: hasLoadedCategory ? conversations : [],
+    activeConversationId: hasLoadedCategory ? activeConversationId : null,
+    historyError: hasLoadedCategory ? historyError : '',
     deletingConversationId,
     selectConversation,
     deleteConversation,

@@ -177,7 +177,6 @@ export default function Workouts() {
         weightORduration: exercise.weightORduration === 'duration' ? 'duration' : 'weight',
       })
     }
-
     try {
       const { data } = await api.post('/workouts', workoutBody(plan))
       const saved = normalizeWorkout(data.workout)
@@ -188,6 +187,22 @@ export default function Workouts() {
       setGoalFilter('all')
       setActionError('')
       setAiPlanOpen(false)
+    } catch (error) {
+      throw new Error(errorsFrom(error).form, { cause: error })
+    }
+  }
+  const saveChatSuggestion = async ({ question, suggestion }) => {
+    if (plansLoading) throw new Error('Wait for your workout plans to finish loading before saving a suggestion.')
+    try {
+      const { data } = await api.post('/ai/suggestions/workout/save', { question, suggestion })
+      const saved = normalizeWorkout(data.workout)
+      setPlans((current) => [saved, ...current])
+      setOpenId(saved.id)
+      setNewId(saved.id)
+      setStatusFilter('all')
+      setGoalFilter('all')
+      setActionError('')
+      return `"${saved.name}" was saved to Workout Plans.`
     } catch (error) {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
@@ -339,6 +354,8 @@ export default function Workouts() {
         suggestions={AI_SUGGESTIONS}
         context={{
           page: 'Workout plans',
+          category: 'workout',
+          persistConversations: true,
           data: {
             loading: plansLoading,
             plans: plans.map((plan) => ({
@@ -354,6 +371,7 @@ export default function Workouts() {
             })),
           },
         }}
+        onSaveRecommendation={saveChatSuggestion}
         wide={aiWide}
         onToggleWide={() => setAiWide((w) => !w)}
       />

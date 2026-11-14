@@ -6,6 +6,7 @@ import AddFoodModal, { Stepper } from '../components/nutrition/AddFoodModal'
 import GoalModal from '../components/nutrition/GoalModal'
 import AiWeekPlanModal from '../components/nutrition/AiWeekPlanModal'
 import { goldBtn } from '../components/workouts/Modal'
+import { api } from '../lib/api'
 import { getProfile, recommendedDailyCalories } from '../lib/profile'
 import { recommend } from '../lib/recommend'
 import useNutrition from '../lib/useNutrition'
@@ -94,6 +95,21 @@ export default function Nutrition() {
       setAiPlanOpen(false)
     } finally {
       setAiPlanSaving(false)
+    }
+  }
+  const saveChatSuggestion = async ({ question, suggestion }) => {
+    if (status === 'loading') throw new Error('Wait for your meal plan to finish loading before saving a suggestion.')
+    try {
+      await nu.flushDate(selected)
+      const { data } = await api.post('/ai/suggestions/nutrition/save', {
+        question,
+        suggestion,
+        meal_date: selected,
+      })
+      nu.acceptSavedMeal(data.meal)
+      return `${data.meal.meal_type} was saved to your meal plan for ${selected}.`
+    } catch (error) {
+      throw new Error(error.response?.data?.message || error.message || 'This suggestion could not be saved.', { cause: error })
     }
   }
 
@@ -250,6 +266,8 @@ export default function Nutrition() {
         suggestions={AI_SUGGESTIONS}
         context={{
           page: 'Nutrition',
+          category: 'nutrition',
+          persistConversations: true,
           data: {
             selectedDate: selected,
             dailyGoal: {
@@ -281,6 +299,7 @@ export default function Nutrition() {
               })),
           },
         }}
+        onSaveRecommendation={saveChatSuggestion}
         wide={aiWide}
         onToggleWide={() => setAiWide((w) => !w)}
       />

@@ -219,5 +219,40 @@ export default function useNutrition(rec) {
 
   const retry = () => [...dirty.current].forEach((k) => { const [d, t] = k.split('|'); flush(d, t) })
 
-  return { ...data, status, notice, syncError, addItem, setQty, removeItem, setNote, markDone, generate, replaceWeekMeals, saveGoal, resetGoal, createFood, retry }
+  const flushDate = async (date) => {
+    const keys = new Set([
+      ...Object.keys(timers.current),
+      ...ref.current.meals.filter((meal) => meal.meal_date === date).map((meal) => keyOf(date, meal.meal_type)),
+    ].filter((key) => key.startsWith(`${date}|`)))
+
+    await Promise.all([...keys].map((key) => {
+      if (timers.current[key]) {
+        clearTimeout(timers.current[key])
+        delete timers.current[key]
+      }
+      const [, type] = key.split('|')
+      return flush(date, type)
+    }))
+
+    if ([...dirty.current].some((key) => key.startsWith(`${date}|`))) {
+      throw new Error('Your existing meal changes could not be saved. Retry them before saving this suggestion.')
+    }
+  }
+
+  const acceptSavedMeal = (meal) => {
+    const saved = normMeal(meal)
+    const key = keyOf(saved.meal_date, saved.meal_type)
+    if (timers.current[key]) {
+      clearTimeout(timers.current[key])
+      delete timers.current[key]
+    }
+    dirty.current.delete(key)
+    commit((current) => ({
+      ...current,
+      meals: dedupeMeals([saved, ...current.meals.filter((item) => keyOf(item.meal_date, item.meal_type) !== key)]),
+    }))
+    if (dirty.current.size === 0) setSyncError('')
+  }
+
+  return { ...data, status, notice, syncError, addItem, setQty, removeItem, setNote, markDone, generate, replaceWeekMeals, saveGoal, resetGoal, createFood, retry, flushDate, acceptSavedMeal }
 }
