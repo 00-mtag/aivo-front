@@ -4,6 +4,10 @@ import logo from '../assets/logo.png'
 import useAivoChat from '../lib/useAivoChat'
 
 const ICONS = [Dumbbell, UtensilsCrossed, Zap]
+const isWorkoutPlanRequest = (message) => (
+  /\b(?:plan|routine|schedule|program|programme)\b/i.test(message)
+  && /\b(?:create|make|build|generate|design|suggest|recommend|give|write|draft|need|want|looking for)\b/i.test(message)
+)
 const Avatar = () => (
   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-gold/50 bg-[#101010]"><img src={logo} alt="" className="h-6 w-auto" /></span>
 )
@@ -30,7 +34,16 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
   const [saveFeedback, setSaveFeedback] = useState('')
   const [saveFeedbackError, setSaveFeedbackError] = useState(false)
   const endRef = useRef(null)
+  const savedPlanLabel = page === 'Workout plans' ? 'workout plan' : page === 'Nutrition' ? 'meal plan' : 'plan'
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, busy, error])
+  useEffect(() => {
+    if (!saveFeedback || savingSuggestion) return undefined
+    const timeout = window.setTimeout(() => {
+      setSaveFeedback('')
+      setSaveFeedbackError(false)
+    }, 8000)
+    return () => window.clearTimeout(timeout)
+  }, [saveFeedback, savingSuggestion])
   const saveReply = async (reply, index) => {
     if (!onSaveRecommendation || savingSuggestion || savedReplies.has(index)) return
     setSavingSuggestion(true)
@@ -54,6 +67,8 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
     setSaveFeedbackError(false)
   }
   const submit = (value) => {
+    setSaveFeedback('')
+    setSaveFeedbackError(false)
     const saveCommand = /^\s*(please\s+)?(save|add)\s+(it|this|that)\s+to\s+(my|the)\s+(workout\s+|meal\s+)?plan[.! ]*$/i.test(value)
     if (saveCommand && onSaveRecommendation) {
       let assistantIndex = -1
@@ -137,12 +152,15 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
             <Avatar />
             <div className="min-w-0">
               <p className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm">{m.content}</p>
-              {onSaveRecommendation && messages[i - 1]?.role === 'user' && (
+              {onSaveRecommendation
+                && messages[i - 1]?.role === 'user'
+                && (page !== 'Workout plans' || isWorkoutPlanRequest(messages[i - 1].content))
+                && (
                 <button type="button" disabled={savingSuggestion || savedReplies.has(i)} onClick={() => saveReply({
                   question: messages[i - 1].content,
                   suggestion: m.content,
                 }, i)} className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-gold/40 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50">
-                  <BookmarkPlus size={14} /> {savedReplies.has(i) ? 'Saved to plan' : 'Save to my plan'}
+                  <BookmarkPlus size={14} /> {savedReplies.has(i) ? `Saved to my ${savedPlanLabel}` : `Save to my ${savedPlanLabel}`}
                 </button>
               )}
             </div>
