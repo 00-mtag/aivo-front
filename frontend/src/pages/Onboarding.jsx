@@ -13,7 +13,6 @@ import { logWeight, setTargets } from '../lib/progress'
 const GENDERS = [
   { value: 'Male', glyph: '♂', desc: null },
   { value: 'Female', glyph: '♀', desc: null },
-  { value: 'Prefer not to say', icon: User, desc: null },
 ]
 const GOALS = [
   { value: 'Lose weight', icon: TrendingDown, desc: 'Burn fat with a small calorie deficit' },
@@ -80,7 +79,6 @@ export default function Onboarding() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)   // 0 = welcome, 1..10 = questions
   const dir = useRef(1)
-  const timer = useRef(null)
   const scroller = useRef(null)
   const fileRef = useRef(null)
 
@@ -110,12 +108,6 @@ export default function Onboarding() {
 
   /* ---------- navigation ---------- */
   const go = (n) => { dir.current = n > step ? 1 : -1; setStep(n) }
-  // Single-choice screens move on by themselves a moment after you tap.
-  const advanceFrom = (from) => {
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => { dir.current = 1; setStep((s) => (s === from ? from + 1 : s)) }, 320)
-  }
-  useEffect(() => () => clearTimeout(timer.current), [])
   useEffect(() => { scroller.current?.scrollTo?.({ top: 0 }) }, [step])
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl) }, [photoUrl])
 
@@ -281,7 +273,7 @@ export default function Onboarding() {
               <Screen title="What's your gender?" subtitle="We use this to estimate how many calories you need.">
                 <div role="radiogroup" aria-label="Gender" className="space-y-3">
                   {GENDERS.map((g) => <OptionCard key={g.value} glyph={g.glyph} icon={g.icon} title={g.value} selected={gender === g.value}
-                    onClick={() => { setGender(g.value); advanceFrom(1) }} />)}
+                    onClick={() => setGender(g.value)} />)}
                 </div>
               </Screen>
             )}
@@ -290,7 +282,7 @@ export default function Onboarding() {
               <Screen title="What's your main goal?" subtitle="Pick the one that matters most right now.">
                 <div role="radiogroup" aria-label="Goal" className="space-y-3">
                   {GOALS.map((g) => <OptionCard key={g.value} icon={g.icon} title={g.value} desc={g.desc} selected={goal === g.value}
-                    onClick={() => { setGoal(g.value); advanceFrom(2) }} />)}
+                    onClick={() => setGoal(g.value)} />)}
                 </div>
               </Screen>
             )}

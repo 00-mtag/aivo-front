@@ -34,6 +34,7 @@ export default function GoogleButton({ onCredential }) {
 
   useEffect(() => {
     let active = true
+    let observer
     const buttonElement = buttonRef.current
     const callbacks = {
       onCredential: (credential) => onCredentialRef.current(credential),
@@ -59,13 +60,24 @@ export default function GoogleButton({ onCredential }) {
           })
           initializedGoogleClientId = googleClientId
         }
-        window.google.accounts.id.renderButton(buttonElement, {
-          theme: 'outline',
-          size: 'large',
-          text: 'continue_with',
-          shape: 'rectangular',
-          width: Math.min(400, Math.floor(buttonElement.getBoundingClientRect().width)),
-        })
+        let lastWidth = 0
+        const render = () => {
+          const width = Math.min(400, Math.max(200, Math.floor(buttonElement.getBoundingClientRect().width)))
+          if (width === lastWidth) return
+          lastWidth = width
+          buttonElement.replaceChildren()
+          window.google.accounts.id.renderButton(buttonElement, {
+            theme: 'outline',
+            size: 'large',
+            text: 'continue_with',
+            shape: 'rectangular',
+            width,
+          })
+        }
+
+        render()
+        observer = new ResizeObserver(render)
+        observer.observe(buttonElement)
       })
       .catch(() => {
         if (active) setError('Could not load Google Sign-In. Check your connection and try again.')
@@ -73,14 +85,15 @@ export default function GoogleButton({ onCredential }) {
 
     return () => {
       active = false
+      observer?.disconnect()
       if (activeGoogleCallbacks === callbacks) activeGoogleCallbacks = undefined
       buttonElement?.replaceChildren()
     }
   }, [])
 
   return (
-    <div className="space-y-2">
-      <div ref={buttonRef} className="flex min-h-10 justify-center" />
+    <div className="w-full min-w-0 space-y-2">
+      <div ref={buttonRef} className="flex min-h-10 w-full min-w-0 justify-center overflow-hidden" />
       {(!googleClientId || error) && (
         <p role="alert" className="text-center text-xs text-danger">
           {googleClientId ? error : 'Google sign-in is not configured. Set VITE_GOOGLE_CLIENT_ID.'}

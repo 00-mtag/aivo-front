@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDown, ArrowUp, CalendarDays, CalendarPlus, ChevronDown, Copy, Dumbbell, Lightbulb, Pencil, Play, Plus, Target, Timer, Trash2, Zap } from 'lucide-react'
 import { DAYS, DAY_NAMES, dayCount, exerciseCount, exerciseLine, exerciseTarget, isActive, placeLabel, planDescription, planWeeks } from '../../lib/workouts'
 import { ConfirmModal, ghostBtn, goldBtn } from './Modal'
@@ -7,37 +8,67 @@ import { GOAL_META } from './controls'
 const SHOWN = 4
 const todayName = () => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()]
 
-// A three-dot menu. Closes when you tap outside, press Escape, or pick an item.
+// A three-dot menu. It floats above the page (so no card can clip it), opens upward when there is
+// no room below, and closes when you tap outside, press Escape, or pick an item.
 function Menu({ items, label = 'More options' }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const [pos, setPos] = useState(null)
+  const btnRef = useRef(null)
+  const menuRef = useRef(null)
+
+  const place = () => {
+    const b = btnRef.current?.getBoundingClientRect()
+    const m = menuRef.current
+    if (!b || !m) return
+    const w = m.offsetWidth, h = m.offsetHeight, gap = 6, edge = 8
+    const left = Math.min(Math.max(edge, b.right - w), window.innerWidth - w - edge)
+    const room = { below: window.innerHeight - b.bottom - edge, above: b.top - edge }
+    let top
+    if (room.below >= h + gap) top = b.bottom + gap                    // fits below
+    else if (room.above >= h + gap) top = b.top - h - gap              // fits above
+    else top = Math.max(edge, window.innerHeight - h - edge)           // tall menu on a short screen: scrolls inside
+    setPos({ left, top })
+  }
+
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return undefined }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!open) return undefined
-    const away = (e) => { if (!ref.current?.contains(e.target)) setOpen(false) }
-    const esc = (e) => e.key === 'Escape' && setOpen(false)
+    const away = (e) => { if (!btnRef.current?.contains(e.target) && !menuRef.current?.contains(e.target)) setOpen(false) }
+    const esc = (e) => { if (e.key === 'Escape') { setOpen(false); btnRef.current?.focus() } }
     document.addEventListener('pointerdown', away)
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc) }
   }, [open])
+
   return (
-    <div ref={ref} className="relative">
-      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+    <>
+      <button ref={btnRef} type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}
         className="grid h-10 w-9 place-items-center rounded-lg text-mute transition hover:bg-white/10 hover:text-ink">
         <span className="flex flex-col gap-[3px]" aria-hidden="true"><i className="h-1 w-1 rounded-full bg-current" /><i className="h-1 w-1 rounded-full bg-current" /><i className="h-1 w-1 rounded-full bg-current" /></span>
       </button>
-      {open && (
-        <ul role="menu" className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-xl border border-white/10 bg-[#222] py-1 shadow-xl shadow-black/50">
+      {open && createPortal(
+        <ul ref={menuRef} role="menu" aria-label={label}
+          className="fixed w-52 overflow-y-auto rounded-xl border border-white/10 bg-[#222] py-1 shadow-xl shadow-black/50"
+          style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden', zIndex: 58, maxHeight: 'calc(100dvh - 16px)' }}>
           {items.map(({ label: text, icon: Icon, onClick, disabled, danger }) => (
             <li key={text}>
               <button type="button" role="menuitem" disabled={disabled} onClick={() => { setOpen(false); onClick() }}
-                className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-xs transition hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent ${danger ? 'text-danger' : ''}`}>
+                className={`flex w-full items-center gap-2.5 px-3 py-3 text-left text-xs transition hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent ${danger ? 'text-danger' : ''}`}>
                 <Icon size={14} />{text}
               </button>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       )}
-    </div>
+    </>
   )
 }
 
@@ -71,7 +102,7 @@ export default function PlanCard({ plan, open, isNew, onStart, onCalendar, onTog
   const plural = (n) => `${n} exercise${n === 1 ? '' : 's'}`
 
   return (
-    <article className={`overflow-hidden rounded-2xl border bg-card transition-colors ${open || isNew ? 'border-gold/60' : 'border-white/10'}`}>
+    <article className={`rounded-2xl border bg-card transition-colors ${open || isNew ? 'border-gold/60' : 'border-white/10'}`}>
       <div className="flex items-center gap-2 p-3 sm:gap-3 sm:p-4">
         <button type="button" onClick={onToggle} aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${plan.name}`}
           className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left focus-visible:outline-2 focus-visible:outline-gold">

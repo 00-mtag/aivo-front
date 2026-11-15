@@ -45,11 +45,6 @@ export default function ExerciseModal({
   const [typeF, setTypeF] = useState('all')
 
   const catalog = useMemo(() => exerciseCatalog.map(enrichExercise), [exerciseCatalog])
-  const shown = useMemo(() => catalog.filter((e) =>
-    exerciseFits(e, eq)
-    && (muscleF === 'All' || e.muscle === muscleF)
-    && (typeF === 'all' || (typeF === 'timed') === e.timed)
-    && (!q.trim() || e.name.toLowerCase().includes(q.trim().toLowerCase()))), [catalog, eq, muscleF, typeF, q])
   const set = (patch) => setF((s) => ({ ...s, ...patch }))
   const toggleEq = (id) => setEq((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))
 
@@ -122,6 +117,69 @@ export default function ExerciseModal({
   /* ---------- step 1: choose the exercise ---------- */
   if (view === 'pick') {
     const loading = exerciseNamesLoading
+    const needle = q.trim().toLowerCase()
+    const matchQ = (e) => !needle || e.name.toLowerCase().includes(needle)
+    const okMuscle = (e, m) => m === 'All' || e.muscle === m
+    const okType = (e, t) => t === 'all' || (t === 'timed') === e.timed
+    // Does an exercise pass the filters? Any one of them can be swapped to see "what if".
+    const test = (e, o = {}) => matchQ(e) && exerciseFits(e, o.eq ?? eq) && okMuscle(e, o.m ?? muscleF) && okType(e, o.t ?? typeF)
+
+    const exact = catalog.filter((e) => test(e))
+    const muscleCount = (m) => catalog.filter((e) => test(e, { m })).length
+    const typeCount = (t) => catalog.filter((e) => test(e, { t })).length
+    const unlocks = (id) => (eq.includes(id) ? 0 : catalog.filter((e) => test(e, { eq: [...eq, id] }) && !test(e)).length)
+
+    // Near misses: exercises that fail exactly one filter, so the user always has something to pick.
+    const rest = catalog.filter((e) => matchQ(e) && !test(e))
+    const missed = (e) => [!exerciseFits(e, eq) && 'eq', !okMuscle(e, muscleF) && 'm', !okType(e, typeF) && 't'].filter(Boolean)
+    const groups = []
+    if (exact.length < 4) {
+      const defs = [
+        ['eq', muscleF !== 'All' ? `${muscleF} exercises that need other equipment` : 'Exercises that need other equipment'],
+        ['m', 'Other muscle groups with your equipment'],
+        ['t', typeF === 'timed' ? 'Rep-based exercises instead' : 'Timed exercises instead'],
+      ]
+      defs.forEach(([key, title]) => {
+        const items = rest.filter((e) => { const m = missed(e); return m.length === 1 && m[0] === key })
+        if (items.length) groups.push({ key, title, items: items.slice(0, 6) })
+      })
+      if (!exact.length && !groups.length) {
+        const close = rest.filter((e) => missed(e).length === 2).slice(0, 8)
+        if (close.length) groups.push({ key: 'close', title: 'Closest matches', items: close })
+      }
+      if (!exact.length && !groups.length) {
+        const any = catalog.filter(matchQ).slice(0, 12)
+        if (any.length) groups.push({ key: 'all', title: 'All exercises', items: any })
+      }
+    }
+
+    const filtersOn = eq.length < EQUIPMENT_IDS.length || muscleF !== 'All' || typeF !== 'all' || q
+    const clear = () => { setEq(EQUIPMENT_IDS); setMuscleF('All'); setTypeF('all'); setQ('') }
+    const eqText = eq.length === EQUIPMENT_IDS.length ? 'any equipment' : eq.length ? eq.map((id) => equipmentLabel(id)).join(' or ') : 'no equipment'
+    const unlockable = EQUIPMENT.filter((e) => unlocks(e.id) > 0)
+    const count = (n) => <span className="ml-1 text-[10px] font-medium opacity-60">{n}</span>
+
+    const row = (e) => {
+      const lacking = e.equipment.filter((t) => !eq.includes(t))
+      return (
+        <li key={e.id}>
+          <button type="button" onClick={() => choose(e)}
+            className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-left transition hover:border-gold/60 active:scale-[0.99]">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/5 text-gold">{e.timed ? <Timer size={20} /> : <Dumbbell size={20} />}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold">{e.name}</span>
+              <span className="mt-1 flex flex-wrap gap-1.5">
+                <Badge>{e.muscle}</Badge>
+                {e.equipment.map((t) => <Badge key={t}>{equipmentLabel(t)}</Badge>)}
+                {e.timed && <Badge gold>Timed</Badge>}
+                {lacking.length > 0 && <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">Needs {lacking.map(equipmentLabel).join(', ')}</span>}
+              </span>
+            </span>
+          </button>
+        </li>
+      )
+    }
+
     return (
       <Modal title="Choose an exercise" subtitle={exerciseGoal ? `Best for ${exerciseGoal}. Tap one to continue.` : 'Tap one to continue.'} onClose={onClose} wide>
         {errorBox}
@@ -132,51 +190,63 @@ export default function ExerciseModal({
 
         <Label hint={eq.length === EQUIPMENT_IDS.length ? 'Everything' : `${eq.length} selected`}>Equipment you can use</Label>
         <div className="flex flex-wrap gap-2">
-          {EQUIPMENT.map((e) => <Chip key={e.id} active={eq.includes(e.id)} onClick={() => toggleEq(e.id)} className="!min-h-[2.25rem] !px-3 !text-xs">{e.label}</Chip>)}
+          {EQUIPMENT.map((e) => {
+            const n = unlocks(e.id)
+            return <Chip key={e.id} active={eq.includes(e.id)} onClick={() => toggleEq(e.id)} className="!min-h-[2.25rem] !px-3 !text-xs">{e.label}{n > 0 && <span className="ml-1 text-[10px] font-bold text-gold">+{n}</span>}</Chip>
+          })}
         </div>
 
         <Label>Muscle group</Label>
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          {['All', ...MUSCLES].map((m) => <Chip key={m} active={muscleF === m} onClick={() => setMuscleF(m)} className="!min-h-[2.25rem] !px-3 !text-xs">{m}</Chip>)}
+          {['All', ...MUSCLES].map((m) => {
+            const n = m === 'All' ? null : muscleCount(m)
+            return <Chip key={m} active={muscleF === m} onClick={() => setMuscleF(m)} className={`!min-h-[2.25rem] !px-3 !text-xs ${n === 0 && muscleF !== m ? 'opacity-50' : ''}`}>{m}{n != null && count(n)}</Chip>
+          })}
         </div>
 
         <Label>Type</Label>
         <div className="flex gap-2">
-          {[['all', 'All'], ['reps', 'Reps'], ['timed', 'Timed']].map(([id, label]) => <Chip key={id} active={typeF === id} onClick={() => setTypeF(id)} className="!min-h-[2.25rem] !px-3 !text-xs">{label}</Chip>)}
+          {[['all', 'All'], ['reps', 'Reps'], ['timed', 'Timed']].map(([id, label]) => {
+            const n = id === 'all' ? null : typeCount(id)
+            return <Chip key={id} active={typeF === id} onClick={() => setTypeF(id)} className={`!min-h-[2.25rem] !px-3 !text-xs ${n === 0 && typeF !== id ? 'opacity-50' : ''}`}>{label}{n != null && count(n)}</Chip>
+          })}
         </div>
 
         <div className="mb-2 mt-5 flex items-center justify-between text-xs text-mute">
-          <span aria-live="polite">{loading ? 'Loading exercises...' : `${shown.length} exercise${shown.length === 1 ? '' : 's'}`}</span>
-          {(eq.length < EQUIPMENT_IDS.length || muscleF !== 'All' || typeF !== 'all' || q) && (
-            <button type="button" onClick={() => { setEq(EQUIPMENT_IDS); setMuscleF('All'); setTypeF('all'); setQ('') }} className="font-semibold text-gold hover:underline">Clear filters</button>
-          )}
+          <span aria-live="polite">{loading ? 'Loading exercises...' : `${exact.length} matching exercise${exact.length === 1 ? '' : 's'}`}</span>
+          {filtersOn && <button type="button" onClick={clear} className="font-semibold text-gold hover:underline">Clear filters</button>}
         </div>
         {exerciseNamesError && <p role="alert" className="mb-2 text-sm text-danger">{exerciseNamesError}</p>}
         {!loading && !exerciseNamesError && catalog.length === 0 && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-mute">No exercises are available for this goal yet.</p>}
-        {!loading && catalog.length > 0 && shown.length === 0 && (
-          <div className="rounded-xl border border-dashed border-white/15 p-5 text-center">
-            <p className="text-sm text-mute">Nothing matches. Try adding more equipment or another muscle group.</p>
-            <button type="button" onClick={() => { setEq(EQUIPMENT_IDS); setMuscleF('All'); setTypeF('all'); setQ('') }} className={`${ghostBtn} mt-3 !py-2`}>Show everything</button>
+
+        {!loading && catalog.length > 0 && exact.length === 0 && (
+          <div className="mb-4 rounded-2xl border border-gold/30 bg-gold/5 p-4" role="status">
+            <p className="text-sm font-semibold">No exact match, but you have options.</p>
+            <p className="mt-1 text-xs text-ink/80">
+              We found no {muscleF !== 'All' ? `${muscleF.toLowerCase()} ` : ''}{typeF === 'all' ? '' : `${typeF} `}exercise for {eqText}. Add equipment to see more, or pick from the ideas below.
+            </p>
+            {unlockable.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {unlockable.map((e) => (
+                  <button key={e.id} type="button" onClick={() => toggleEq(e.id)}
+                    className="rounded-full border border-gold/60 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 active:scale-95">
+                    + {e.label} ({unlocks(e.id)})
+                  </button>
+                ))}
+              </div>
+            )}
+            {filtersOn && <button type="button" onClick={clear} className="mt-3 text-xs font-semibold text-gold hover:underline">Show everything</button>}
           </div>
         )}
-        <ul className="space-y-2">
-          {shown.map((e) => (
-            <li key={e.id}>
-              <button type="button" onClick={() => choose(e)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-left transition hover:border-gold/60 active:scale-[0.99]">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white/5 text-gold">{e.timed ? <Timer size={20} /> : <Dumbbell size={20} />}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">{e.name}</span>
-                  <span className="mt-1 flex flex-wrap gap-1.5">
-                    <Badge>{e.muscle}</Badge>
-                    {e.equipment.map((t) => <Badge key={t}>{equipmentLabel(t)}</Badge>)}
-                    {e.timed && <Badge gold>Timed</Badge>}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+
+        {exact.length > 0 && <ul className="space-y-2">{exact.map(row)}</ul>}
+
+        {!loading && groups.map((g) => (
+          <section key={g.key} className="mt-5" aria-label={g.title}>
+            <h4 className="mb-2 text-xs font-bold text-gold">{exact.length ? 'More ideas: ' : ''}{g.title}</h4>
+            <ul className="space-y-2">{g.items.map(row)}</ul>
+          </section>
+        ))}
       </Modal>
     )
   }

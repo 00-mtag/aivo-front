@@ -8,9 +8,9 @@ export default function AuthLayout({ children }) {
       <img src={gymBg} alt="" className="absolute inset-0 h-full w-full object-cover" />
       <div className="absolute inset-0 bg-black/45" />
 
-      <div className="relative mx-auto grid min-h-screen max-w-7xl items-center gap-10 px-6 py-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:px-12">
+      <div className="relative mx-auto grid min-h-screen max-w-7xl grid-cols-1 items-center gap-10 px-6 py-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16 lg:px-12">
         {/* Brand text */}
-        <section className="text-center lg:text-left">
+        <section className="min-w-0 text-center lg:text-left">
           <img src={logo} alt="" className="mx-auto mb-1 h-20 w-auto lg:mx-0 lg:h-20" />
           <div className="hidden lg:block">
             <p className="mt-12 text-6xl font-bold leading-[1.1] tracking-tight">
@@ -24,7 +24,7 @@ export default function AuthLayout({ children }) {
         </section>
 
         {/* Form card */}
-        <main className="mx-auto w-full max-w-md lg:ml-auto">
+        <main className="mx-auto w-full min-w-0 max-w-md lg:ml-auto">
           <div className="rounded-[2rem] border border-white/5 bg-card p-8 shadow-2xl shadow-black/60 sm:p-10">
             {children}
           </div>

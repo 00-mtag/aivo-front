@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, Dumbbell, Minus, Pause, Play, Plus, RotateCcw, SkipForward, Timer, Trophy, X } from 'lucide-react'
 import { DAY_NAMES, equipmentLabel, exerciseLine, exerciseTarget, fmtClock as fmt, inferEquipment } from '../../lib/workouts'
 import { api, errorsFrom } from '../../lib/api'
@@ -22,16 +22,32 @@ function alertUser() {
 }
 
 // A ring that empties as the time runs down.
-function Ring({ value, total, tone = 'gold', children }) {
-  const size = 220, stroke = 10, r = (size - stroke) / 2, c = 2 * Math.PI * r
-  const p = total > 0 ? Math.min(1, value / total) : 0
+// `live` (a function that returns 0..1 of time left) makes it follow the clock on every screen frame, so it
+// glides instead of ticking once a second. Without `live` it just shows `fraction`.
+const RING = { size: 220, stroke: 10 }
+function Ring({ fraction = 1, live, tone = 'gold', children }) {
+  const { size, stroke } = RING
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r
   const color = tone === 'sky' ? '#38bdf8' : '#f5b82e'
+  const circle = useRef(null)
+  const offset = (p) => String(c * (1 - Math.min(1, Math.max(0, p))))
+
+  useEffect(() => {
+    const el = circle.current
+    if (!el) return undefined
+    if (!live) { el.style.strokeDashoffset = offset(fraction); return undefined }
+    let raf
+    const tick = () => { el.style.strokeDashoffset = offset(live()); raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [live, fraction]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="relative mx-auto" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.1)" strokeWidth={stroke} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - p)} style={{ transition: 'stroke-dashoffset .3s linear' }} />
+        <circle ref={circle} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+          strokeDasharray={c} style={{ strokeDashoffset: offset(live ? live() : fraction) }} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
     </div>
@@ -56,10 +72,14 @@ function SetTimer({ seconds, setNumber, totalSets, onComplete }) {
       const ms = acc.current + Date.now() - t0.current
       const left = Math.max(0, Math.ceil((target * 1000 - ms) / 1000))
       setValue(left)
-      if (left === 0) { clearInterval(id); setRunning(false); alertUser(); cb.current?.(target) }
-    }, 200)
+      if (ms >= target * 1000) { clearInterval(id); setRunning(false); alertUser(); cb.current?.(target) }
+    }, 100)
     return () => clearInterval(id)
   }, [running, target])
+
+  // Fraction of time left, read straight from the clock (used by the ring every frame).
+  const live = useCallback(() => 1 - (acc.current + Date.now() - t0.current) / (target * 1000), [target])
+  const pausedFraction = Math.max(0, 1 - acc.current / (target * 1000))
 
   useEffect(() => {
     if (prep == null) return undefined
@@ -79,7 +99,7 @@ function SetTimer({ seconds, setNumber, totalSets, onComplete }) {
   return (
     <div className="mt-6 rounded-3xl border border-white/10 bg-card p-6 text-center">
       <p className="mb-4 text-xs text-mute">Set {setNumber} of {totalSets}</p>
-      <Ring value={prep != null ? 0 : value} total={target}>
+      <Ring live={running ? live : undefined} fraction={prep != null ? 1 : started ? pausedFraction : 1}>
         {prep != null ? (
           <>
             <p className="text-[11px] font-bold tracking-widest text-gold">GET READY</p>
@@ -114,26 +134,31 @@ function SetTimer({ seconds, setNumber, totalSets, onComplete }) {
 // Rest between sets. Starts by itself, clearly labelled so it is not mistaken for the exercise timer.
 function RestTimer({ seconds, nextSet, totalSets, onDone }) {
   const [left, setLeft] = useState(seconds)
-  const [total, setTotal] = useState(seconds)
   const end = useRef(Date.now() + seconds * 1000)
+  const total = useRef(seconds)
   const cb = useRef(onDone)
   cb.current = onDone
 
   useEffect(() => {
     const id = setInterval(() => {
-      const l = Math.max(0, Math.ceil((end.current - Date.now()) / 1000))
-      setLeft(l)
-      if (l === 0) { clearInterval(id); alertUser(); cb.current?.() }
-    }, 200)
+      const ms = end.current - Date.now()
+      setLeft(Math.max(0, Math.ceil(ms / 1000)))
+      if (ms <= 0) { clearInterval(id); alertUser(); cb.current?.() }
+    }, 100)
     return () => clearInterval(id)
   }, [])
 
-  const add = (d) => { end.current += d * 1000; setTotal((t) => Math.max(t, Math.ceil((end.current - Date.now()) / 1000))) }
+  const live = useCallback(() => (end.current - Date.now()) / (total.current * 1000), [])
+  const add = (d) => {
+    end.current += d * 1000
+    total.current = Math.max(total.current, Math.ceil((end.current - Date.now()) / 1000))
+    setLeft(Math.max(0, Math.ceil((end.current - Date.now()) / 1000)))
+  }
   const small = 'rounded-full border border-sky-400/40 px-4 py-2.5 text-xs font-semibold text-sky-300 transition hover:bg-sky-400/10 active:scale-95'
 
   return (
     <div className="mt-6 rounded-3xl border border-sky-400/40 bg-sky-400/10 p-6 text-center">
-      <Ring value={left} total={total} tone="sky">
+      <Ring live={live} tone="sky">
         <p className="text-[11px] font-bold tracking-widest text-sky-300">REST</p>
         <p className="text-6xl font-bold tabular-nums text-sky-400" aria-live="off">{fmt(left)}</p>
       </Ring>
