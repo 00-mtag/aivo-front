@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { CalendarDays, ChevronDown, Plus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { HelpCircle, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
 import AskAivoFloating from '../components/AskAivoFloating'
 import PlanCard from '../components/workouts/PlanCard'
@@ -8,53 +8,71 @@ import ExerciseModal from '../components/workouts/ExerciseModal'
 import CalendarModal from '../components/workouts/CalendarModal'
 import WorkoutSession from '../components/workouts/WorkoutSession'
 import AiPlanModal from '../components/workouts/AiPlanModal'
-import { ghostBtn, goldBtn } from '../components/workouts/Modal'
-import { GOALS, isActive, newPlan, normalizeWorkout, savePlans, uid, workoutBody } from '../lib/workouts'
+import WeekStrip from '../components/workouts/WeekStrip'
+import GuideSheet from '../components/workouts/GuideSheet'
+import GettingStarted from '../components/workouts/GettingStarted'
+import { ConfirmModal, ghostBtn, goldBtn } from '../components/workouts/Modal'
+import { Chip } from '../components/workouts/controls'
+import {
+  DAYS, EQUIPMENT_IDS, GOALS, enrichExercise, exerciseCount, exerciseFits, isActive, loadEquipment, newPlan, normalizeWorkout,
+  saveEquipment, savePlans, uid, workoutBody,
+} from '../lib/workouts'
 import { api, errorsFrom } from '../lib/api'
-import { logWorkout, setWorkoutPlan } from '../lib/progress'
+import { userKey } from '../lib/profile'
+import { logWorkout, syncWorkoutPlan } from '../lib/progress'
+import useProgress from '../lib/useProgress'
 
 const AI_SUGGESTIONS = ['Suggest a workout for muscle gain', 'How many calories should I eat?', 'Create a cardio plan']
+const todayName = () => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()]
 
-const BarsIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="4" height="8" rx="1" /><rect x="10" y="7" width="4" height="13" rx="1" /><rect x="16" y="3" width="4" height="17" rx="1" /></svg>
-)
-
-function FilterSelect({ icon, value, onChange, options, label }) {
-  return (
-    <label className="relative flex items-center">
-      <span className="pointer-events-none absolute left-3.5 text-gold">{icon}</span>
-      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}
-        className="appearance-none rounded-xl border border-white/10 bg-card py-3 pl-10 pr-10 text-sm outline-none transition hover:border-white/30 focus:border-gold">
-        {options.map(([v, l]) => <option key={v} value={v} className="bg-card">{l}</option>)}
-      </select>
-      <ChevronDown size={16} className="pointer-events-none absolute right-3 text-mute" />
-    </label>
-  )
-}
+const flag = (name) => { try { return localStorage.getItem(userKey(name)) === '1' } catch { return false } }
+const setFlag = (name) => { try { localStorage.setItem(userKey(name), '1') } catch { /* storage blocked */ } }
 
 export default function Workouts() {
   const [plans, setPlans] = useState([])
   const [plansLoading, setPlansLoading] = useState(true)
   const [plansLoaded, setPlansLoaded] = useState(false)
   const [plansError, setPlansError] = useState('')
+  const [reload, setReload] = useState(0)
   const [actionError, setActionError] = useState('')
   const [exerciseCatalog, setExerciseCatalog] = useState({ goal: null, exercises: [], error: '' })
-  const [openId, setOpenId] = useState(() => plans[0]?.id ?? null)
+  const [openId, setOpenId] = useState(null)
   const [planModal, setPlanModal] = useState(null)   // { planId } | { planId: null } for a new plan
   const [aiPlanOpen, setAiPlanOpen] = useState(false)
   const [exModal, setExModal] = useState(null)       // { planId, day, exercise, edit }
   const [newId, setNewId] = useState(null)           // plan created in this visit (gets a NEW badge)
   const [session, setSession] = useState(null)       // { planId, day } while a workout is running
   const [calId, setCalId] = useState(null)           // plan being added to the calendar
+  const [deleting, setDeleting] = useState(null)     // plan waiting for a "yes, delete it"
+  const [busyDelete, setBusyDelete] = useState(false)
+  const [eqMap, setEqMap] = useState(loadEquipment)  // equipment chosen per plan (kept on this device)
+  const [selectedDay, setSelectedDay] = useState(todayName)
+  const [toast, setToast] = useState('')
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [checklistHidden, setChecklistHidden] = useState(() => flag('aivo_workouts_checklist_hidden'))
   // Desktop: the AI panel starts open beside the plans. Phone/tablet: it starts closed and opens as a modal.
   const [aiOpen, setAiOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches)
   const [aiWide, setAiWide] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
   const [goalFilter, setGoalFilter] = useState('all')
+  const toastTimer = useRef(null)
+
+  const hook = useProgress(0)
+  const prog = hook?.progress ?? hook
+  const doneDays = DAYS.map((_, i) => prog?.days?.[i]?.status === 'done')
+  const everDone = doneDays.some(Boolean) || Boolean(prog?.badges?.find((b) => b.id === 'first')?.earned)
+
+  const notify = (message) => {
+    setToast(message)
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(''), 2800)
+  }
+  useEffect(() => () => clearTimeout(toastTimer.current), [])
 
   useEffect(() => {
     let cancelled = false
-
+    setPlansLoading(true)
+    setPlansError('')
     api.get('/workouts')
       .then(({ data }) => {
         if (cancelled) return
@@ -67,6 +85,8 @@ export default function Workouts() {
         savePlans(loadedPlans)
         setPlansLoaded(true)
         setOpenId(loadedPlans[0]?.id ?? null)
+        // First visit with nothing set up yet: show the short walkthrough once.
+        if (!loadedPlans.length && !flag('aivo_workouts_guide_seen')) setGuideOpen(true)
       })
       .catch((error) => {
         if (!cancelled) setPlansError(errorsFrom(error).form)
@@ -74,11 +94,12 @@ export default function Workouts() {
       .finally(() => {
         if (!cancelled) setPlansLoading(false)
       })
-
     return () => { cancelled = true }
-  }, [])
+  }, [reload])
   useEffect(() => {
-    if (plansLoaded) savePlans(plans)
+    if (!plansLoaded) return
+    savePlans(plans)
+    syncWorkoutPlan(plans.filter((p) => isActive(p)))   // Progress: planned days and weekly goal
   }, [plans, plansLoaded])
 
   // Follow the screen size: open when it becomes desktop-wide, close when it shrinks to phone/tablet.
@@ -89,18 +110,24 @@ export default function Workouts() {
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  const activePlan = planModal?.planId && plans.find((p) => p.id === planModal.planId)
-  const exPlan = exModal && plans.find((p) => p.id === exModal.planId)
+  // Every plan carries the equipment it was made for (older plans default to "everything").
+  const allPlans = useMemo(() => plans.map((p) => ({ ...p, equipment: eqMap[p.id] ?? EQUIPMENT_IDS })), [plans, eqMap])
+  const setPlanEquipment = (id, list) => setEqMap((current) => {
+    const next = { ...current, [id]: list }
+    saveEquipment(next)
+    return next
+  })
+
+  const activePlan = planModal?.planId && allPlans.find((p) => p.id === planModal.planId)
+  const exPlan = exModal && allPlans.find((p) => p.id === exModal.planId)
   const exerciseGoal = exPlan?.goal
   const exercisePlanId = exModal?.planId ?? null
-  const sessionPlan = session && plans.find((p) => p.id === session.planId)
-  const calPlan = calId && plans.find((p) => p.id === calId)
+  const sessionPlan = session && allPlans.find((p) => p.id === session.planId)
+  const calPlan = calId && allPlans.find((p) => p.id === calId)
 
   useEffect(() => {
     if (exercisePlanId === null || !exerciseGoal) return undefined
-
     let cancelled = false
-
     api.get('/exercises', { params: { best_for: exerciseGoal } })
       .then(({ data }) => {
         if (cancelled) return
@@ -112,40 +139,41 @@ export default function Workouts() {
           goal: exerciseGoal,
           exercises: data.exercises
             .filter(({ exercise_id, name }) => Number.isInteger(Number(exercise_id)) && typeof name === 'string')
-            .map(({ exercise_id, name, weightORduration }) => ({
-              id: Number(exercise_id),
-              name,
-              weightORduration: weightORduration === 'duration' ? 'duration' : 'weight',
-            })),
+            .map(enrichExercise),
           error: '',
         })
       })
       .catch((error) => {
         if (!cancelled) setExerciseCatalog({ goal: exerciseGoal, exercises: [], error: errorsFrom(error).form })
       })
-
     return () => { cancelled = true }
   }, [exercisePlanId, exerciseGoal])
 
-  const shown = plans.filter((p) =>
+  const shown = allPlans.filter((p) =>
     (statusFilter === 'all' || (statusFilter === 'active') === isActive(p)) && (goalFilter === 'all' || p.goal === goalFilter))
   const filtering = statusFilter !== 'all' || goalFilter !== 'all'
 
   const savePlan = async (f) => {
+    const { equipment, ...fields } = f
     try {
       if (planModal.planId) {
         const plan = plans.find((item) => item.id === planModal.planId)
-        const { data } = await api.put(`/workouts/${planModal.planId}`, workoutBody({ ...plan, ...f }))
+        const { data } = await api.put(`/workouts/${planModal.planId}`, workoutBody({ ...plan, ...fields }))
         const saved = normalizeWorkout(data.workout)
         setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
+        setPlanEquipment(saved.id, equipment)
+        notify('Plan updated')
       } else {
-        const { data } = await api.post('/workouts', workoutBody(newPlan(f)))
+        const { data } = await api.post('/workouts', workoutBody(newPlan(fields)))
         const saved = normalizeWorkout(data.workout)
         setPlans((current) => [saved, ...current])
+        setPlanEquipment(saved.id, equipment)
         setOpenId(saved.id)
         setNewId(saved.id)
+        setSelectedDay(todayName())
         setStatusFilter('all')
         setGoalFilter('all')
+        notify('Plan created. Now add exercises to your days.')
       }
       setActionError('')
       setPlanModal(null)
@@ -153,7 +181,10 @@ export default function Workouts() {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
   }
-  const saveAiPlan = async (generated) => {
+  const saveAiPlan = async (generated, { equipment = EQUIPMENT_IDS } = {}) => {
+    // Keep only exercises that fit the equipment the user picked (unless that would leave nothing).
+    const fitting = generated.exercises.filter((exercise) => exerciseFits(enrichExercise(exercise), equipment))
+    const exercises = fitting.length ? fitting : generated.exercises
     const plan = newPlan({
       name: generated.name,
       description: generated.description,
@@ -162,7 +193,7 @@ export default function Workouts() {
       minutes: generated.minutes,
       weeks: generated.weeks,
     })
-    for (const exercise of generated.exercises) {
+    for (const exercise of exercises) {
       plan.schedule[exercise.day].push({
         id: uid(),
         exerciseId: Number(exercise.exercise_id),
@@ -177,32 +208,19 @@ export default function Workouts() {
         weightORduration: exercise.weightORduration === 'duration' ? 'duration' : 'weight',
       })
     }
+
     try {
       const { data } = await api.post('/workouts', workoutBody(plan))
       const saved = normalizeWorkout(data.workout)
       setPlans((current) => [saved, ...current])
+      setPlanEquipment(saved.id, equipment)
       setOpenId(saved.id)
       setNewId(saved.id)
       setStatusFilter('all')
       setGoalFilter('all')
       setActionError('')
       setAiPlanOpen(false)
-    } catch (error) {
-      throw new Error(errorsFrom(error).form, { cause: error })
-    }
-  }
-  const saveChatSuggestion = async ({ question, suggestion }) => {
-    if (plansLoading) throw new Error('Wait for your workout plans to finish loading before saving a suggestion.')
-    try {
-      const { data } = await api.post('/ai/suggestions/workout/save', { question, suggestion })
-      const saved = normalizeWorkout(data.workout)
-      setPlans((current) => [saved, ...current])
-      setOpenId(saved.id)
-      setNewId(saved.id)
-      setStatusFilter('all')
-      setGoalFilter('all')
-      setActionError('')
-      return `"${saved.name}" was saved to Workout Plans.`
+      notify('Your AI plan is ready')
     } catch (error) {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
@@ -217,15 +235,35 @@ export default function Workouts() {
       setActionError(errorsFrom(error).form)
     }
   }
-  const deletePlan = async (p) => {
-    if (!window.confirm(`Delete "${p.name}"? This cannot be undone.`)) return
+  const duplicatePlan = async (p) => {
+    try {
+      const { data } = await api.post('/workouts', workoutBody({ ...p, name: `${p.name} copy`.slice(0, 40) }))
+      const saved = normalizeWorkout(data.workout)
+      setPlans((current) => [saved, ...current])
+      setPlanEquipment(saved.id, p.equipment)
+      setOpenId(saved.id)
+      setNewId(saved.id)
+      setActionError('')
+      notify('Plan duplicated')
+    } catch (error) {
+      setActionError(errorsFrom(error).form)
+    }
+  }
+  const deletePlan = async () => {
+    const p = deleting
+    setBusyDelete(true)
     try {
       await api.delete(`/workouts/${p.id}`)
       setPlans((ps) => ps.filter((x) => x.id !== p.id))
       if (openId === p.id) setOpenId(null)
       setActionError('')
+      setDeleting(null)
+      notify('Plan deleted')
     } catch (error) {
       setActionError(errorsFrom(error).form)
+      setDeleting(null)
+    } finally {
+      setBusyDelete(false)
     }
   }
   const saveExercise = async (ex) => {
@@ -255,7 +293,9 @@ export default function Workouts() {
       const saved = normalizeWorkout(data.workout)
       setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
       setActionError('')
+      setSelectedDay(day)
       setExModal(null)
+      notify(ex.id ? 'Exercise updated' : 'Exercise added')
     } catch (error) {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
@@ -273,70 +313,139 @@ export default function Workouts() {
       setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
       setActionError('')
       setExModal(null)
+      notify('Exercise removed')
     } catch (error) {
       setActionError(errorsFrom(error).form)
     }
   }
+
+  // Counts the finished workout in Progress.
+  const completeSession = (summary = {}) => {
+    const plan = sessionPlan
+    const exercises = plan?.schedule?.[session?.day] ?? []
+    logWorkout({
+      name: summary.name ?? plan?.name ?? 'Workout',
+      minutes: summary.minutes ?? plan?.minutes ?? 0,
+      exercises: exercises.map(({ name, sets, reps }) => ({ name, sets, reps })),
+    })
+  }
+
+  const closeGuide = () => { setFlag('aivo_workouts_guide_seen'); setGuideOpen(false) }
+  const hideChecklist = () => { setFlag('aivo_workouts_checklist_hidden'); setChecklistHidden(true) }
+  const startFirstWorkout = () => {
+    const today = todayName()
+    const withToday = allPlans.find((p) => isActive(p) && p.schedule[today]?.length)
+    if (withToday) { setSession({ planId: withToday.id, day: today }); return }
+    const any = allPlans.find((p) => exerciseCount(p) > 0)
+    const day = any && DAYS.find((d) => any.schedule[d]?.length)
+    if (any) setSession({ planId: any.id, day })
+  }
+
+  const checklist = [
+    { label: 'Create your first plan', hint: 'Choose a goal and where you train.', done: allPlans.length > 0, actionLabel: 'Create plan', action: () => setPlanModal({ planId: null }) },
+    { label: 'Add exercises to a day', hint: 'Open your plan, pick a day, tap Add exercise.', done: allPlans.some((p) => exerciseCount(p) > 0), actionLabel: 'Open plan', action: () => { if (allPlans[0]) setOpenId(allPlans[0].id) } },
+    { label: 'Do your first workout', hint: 'Press Start and follow along.', done: everDone, actionLabel: 'Start', action: startFirstWorkout },
+  ]
+  const showChecklist = plansLoaded && !plansLoading && !checklistHidden && checklist.some((s) => !s.done)
+  const hasPlans = allPlans.length > 0
 
   return (
     <div className="min-h-screen bg-[#0d0d0d]">
       <Sidebar />
       {/* When the AI panel is open on a wide screen it sits beside the page, so the page makes room for it */}
       <main className={`min-h-screen bg-[#161616] px-5 pb-28 pt-8 transition-[padding] sm:px-8 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-12 ${aiOpen ? (aiWide ? 'xl:pr-[43rem] 2xl:pr-[51rem]' : 'xl:pr-[31rem] 2xl:pr-[35rem]') : ''}`}>
-        <header>
-          <h1 className="text-3xl font-bold sm:text-4xl">Workouts</h1>
-          <p className="mt-1 text-sm text-ink/80">Plan your week and keep your routines in one place.</p>
+        <header className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold sm:text-4xl">Workouts</h1>
+            <p className="mt-1 text-sm text-ink/80">Plan your week, then follow along step by step.</p>
+          </div>
+          <button type="button" onClick={() => setGuideOpen(true)} className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-2 text-xs font-semibold text-gold transition hover:bg-white/5">
+            <HelpCircle size={16} /> How it works
+          </button>
         </header>
-        {plansError && <p role="alert" className="mt-4 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">Could not load workouts: {plansError}</p>}
-        {actionError && <p role="alert" className="mt-4 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{actionError}</p>}
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => setPlanModal({ planId: null })} className={`${goldBtn} flex items-center gap-2 !py-3`}><Plus size={18} /> Create New Plan</button>
-          <FilterSelect label="Filter by status" icon={<CalendarDays size={18} />} value={statusFilter} onChange={setStatusFilter}
-            options={[['all', 'All Plans'], ['active', 'Active'], ['inactive', 'Inactive']]} />
-          <FilterSelect label="Filter by goal" icon={<BarsIcon />} value={goalFilter} onChange={setGoalFilter}
-            options={[['all', 'All Goals'], ...GOALS.map((g) => [g, g])]} />
-        </div>
+        {plansError && (
+          <div role="alert" className="mt-4 max-w-3xl rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+            <p>Could not load workouts: {plansError}</p>
+            <button type="button" onClick={() => setReload((n) => n + 1)} className="mt-2 flex items-center gap-1.5 font-semibold underline"><RefreshCw size={14} /> Try again</button>
+          </div>
+        )}
+        {actionError && <p role="alert" className="mt-4 max-w-3xl rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{actionError}</p>}
 
-        <div className="mt-6 max-w-3xl space-y-3">
-          {plansLoading && <p role="status" className="rounded-xl border border-white/10 p-6 text-center text-sm text-mute">Loading workouts...</p>}
-          {!plansLoading && !plansError && plans.length === 0 && (
-            <div className="rounded-xl border border-dashed border-white/20 p-10 text-center">
-              <p className="font-semibold">No workout plans yet</p>
-              <p className="mt-1 text-sm text-mute">Create your first plan to start building your week.</p>
+        <div className="mt-6 max-w-3xl space-y-5">
+          {showChecklist && <GettingStarted steps={checklist} onHide={hideChecklist} onShowGuide={() => setGuideOpen(true)} />}
+
+          {hasPlans && (
+            <WeekStrip plans={allPlans} done={doneDays} today={todayName()} selected={selectedDay} onSelect={setSelectedDay}
+              onStart={(planId, day) => setSession({ planId, day })} onCreate={() => setPlanModal({ planId: null })} />
+          )}
+
+          {!plansLoading && !plansError && !hasPlans && (
+            <section className="rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-6 text-center sm:p-8">
+              <h2 className="text-xl font-bold">Build your first workout plan</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-ink/80">Pick a goal, say where you train, and choose your days. It takes about a minute.</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-3">
+                <button type="button" onClick={() => setPlanModal({ planId: null })} className={`${goldBtn} flex items-center gap-2 !py-3`}><Plus size={18} /> Create a plan</button>
+                <button type="button" onClick={() => setAiPlanOpen(true)} className={`${ghostBtn} flex items-center gap-2 !py-3`}><Sparkles size={16} /> Let AI build it</button>
+              </div>
+            </section>
+          )}
+
+          {hasPlans && (
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => setPlanModal({ planId: null })} className={`${goldBtn} flex items-center gap-2 !py-3`}><Plus size={18} /> Create a plan</button>
+              <button type="button" onClick={() => setAiPlanOpen(true)} className={`${ghostBtn} flex items-center gap-2 !py-3`}><Sparkles size={16} /> Let AI build one</button>
             </div>
           )}
-          {plans.length > 0 && shown.length === 0 && (
-            <div className="rounded-xl border border-dashed border-white/20 p-8 text-center">
-              <p className="font-semibold">No plans match these filters</p>
-              {filtering && <button type="button" onClick={() => { setStatusFilter('all'); setGoalFilter('all') }} className={`${ghostBtn} mt-4`}>Clear filters</button>}
+
+          {allPlans.length > 1 && (
+            <div className="space-y-2" aria-label="Filter plans">
+              <div className="flex flex-wrap gap-2">
+                {[['all', 'All plans'], ['active', 'Active'], ['inactive', 'Inactive']].map(([id, label]) => <Chip key={id} active={statusFilter === id} onClick={() => setStatusFilter(id)} className="!min-h-[2.25rem] !px-3.5 !text-xs">{label}</Chip>)}
+              </div>
+              <div className="-mx-5 overflow-x-auto px-5 sm:mx-0 sm:px-0">
+                <div className="flex gap-2 pb-1">
+                  {[['all', 'All goals'], ...GOALS.map((g) => [g, g])].map(([id, label]) => <Chip key={id} active={goalFilter === id} onClick={() => setGoalFilter(id)} className="!min-h-[2.25rem] !px-3.5 !text-xs">{label}</Chip>)}
+                </div>
+              </div>
             </div>
           )}
-          {shown.map((p) => (
-            <PlanCard key={p.id} plan={p} open={openId === p.id} isNew={newId === p.id}
-              onStart={(day) => setSession({ planId: p.id, day })}
-              onCalendar={() => setCalId(p.id)}
-              onToggle={() => setOpenId(openId === p.id ? null : p.id)}
-              onChange={persistPlan}
-              onEditPlan={() => setPlanModal({ planId: p.id })}
-              onDeletePlan={() => deletePlan(p)}
-              onOpenExercise={(day, exercise, edit) => setExModal({ planId: p.id, day, exercise, edit })}
-              onAddExercise={(day) => setExModal({ planId: p.id, day, exercise: null })} />
-          ))}
+
+          <div className="space-y-3">
+            {plansLoading && [0, 1].map((n) => <div key={n} role="status" aria-label="Loading workouts" className="h-28 animate-pulse rounded-2xl border border-white/10 bg-card" />)}
+            {hasPlans && shown.length === 0 && (
+              <div className="rounded-xl border border-dashed border-white/20 p-8 text-center">
+                <p className="font-semibold">No plans match these filters</p>
+                {filtering && <button type="button" onClick={() => { setStatusFilter('all'); setGoalFilter('all') }} className={`${ghostBtn} mt-4`}>Clear filters</button>}
+              </div>
+            )}
+            {shown.map((p) => (
+              <PlanCard key={p.id} plan={p} open={openId === p.id} isNew={newId === p.id}
+                onStart={(day) => setSession({ planId: p.id, day })}
+                onCalendar={() => setCalId(p.id)}
+                onToggle={() => setOpenId(openId === p.id ? null : p.id)}
+                onChange={persistPlan}
+                onEditPlan={() => setPlanModal({ planId: p.id })}
+                onDuplicate={() => duplicatePlan(p)}
+                onDeletePlan={() => setDeleting(p)}
+                onOpenExercise={(day, exercise, edit) => setExModal({ planId: p.id, day, exercise, edit })}
+                onAddExercise={(day) => setExModal({ planId: p.id, day, exercise: null })} />
+            ))}
+          </div>
         </div>
       </main>
 
       {planModal && (planModal.planId ? activePlan : true) && (
-        <PlanModal plan={activePlan || null} onSave={savePlan}
+        <PlanModal plan={activePlan || null} equipment={activePlan?.equipment} onSave={savePlan}
           onAiDecide={() => { setPlanModal(null); setAiPlanOpen(true) }}
           onClose={() => setPlanModal(null)} />
       )}
-      {aiPlanOpen && <AiPlanModal onGenerate={saveAiPlan} onClose={() => { setAiPlanOpen(false); setPlanModal({ planId: null }) }} />}
+      {aiPlanOpen && <AiPlanModal onGenerate={saveAiPlan} onClose={() => setAiPlanOpen(false)} />}
       {exModal && exPlan && (
         <ExerciseModal key={exModal.exercise?.id ?? 'new'} exercise={exModal.exercise} startEditing={exModal.edit}
-          exerciseNames={exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.exercises.map(({ name }) => name) : []}
           exerciseCatalog={exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.exercises : []}
           exerciseGoal={exerciseGoal}
+          equipment={exPlan.equipment}
           exerciseNamesLoading={Boolean(exerciseGoal && exerciseCatalog.goal !== exerciseGoal)}
           exerciseNamesError={!exerciseGoal
             ? 'This workout plan has no goal selected. Edit the plan to see matching exercises.'
@@ -345,7 +454,18 @@ export default function Workouts() {
           onSave={saveExercise} onDelete={deleteExercise} onClose={() => setExModal(null)} />
       )}
       {calPlan && <CalendarModal plan={calPlan} onClose={() => setCalId(null)} />}
-      {sessionPlan && <WorkoutSession plan={sessionPlan} day={session.day} onClose={() => setSession(null)} />}
+      {deleting && (
+        <ConfirmModal title="Delete this plan?" text={`"${deleting.name}" and all its exercises will be deleted. This cannot be undone.`}
+          confirmLabel="Delete plan" danger busy={busyDelete} onConfirm={deletePlan} onClose={() => setDeleting(null)} />
+      )}
+      {sessionPlan && <WorkoutSession plan={sessionPlan} day={session.day} onComplete={completeSession} onClose={() => setSession(null)} />}
+      {guideOpen && <GuideSheet hasPlans={hasPlans} onClose={closeGuide} onCreate={() => { closeGuide(); setPlanModal({ planId: null }) }} />}
+
+      {toast && (
+        <div role="status" className="pointer-events-none fixed inset-x-0 bottom-24 z-[58] flex justify-center px-5 lg:bottom-8">
+          <p className="rounded-full border border-gold/40 bg-[#1c1c1c] px-5 py-2.5 text-sm font-semibold shadow-xl shadow-black/50">{toast}</p>
+        </div>
+      )}
 
       <AskAivoFloating
         open={aiOpen}
@@ -354,16 +474,15 @@ export default function Workouts() {
         suggestions={AI_SUGGESTIONS}
         context={{
           page: 'Workout plans',
-          category: 'workout',
-          persistConversations: true,
           data: {
             loading: plansLoading,
-            plans: plans.map((plan) => ({
+            plans: allPlans.map((plan) => ({
               name: plan.name,
               goal: plan.goal,
               level: plan.level,
               minutesPerSession: plan.minutes,
               active: plan.active,
+              equipment: plan.equipment,
               schedule: Object.fromEntries(Object.entries(plan.schedule).map(([day, exercises]) => [
                 day,
                 exercises.map(({ name, sets, reps, muscle }) => ({ name, sets, reps, muscle })),
@@ -371,7 +490,6 @@ export default function Workouts() {
             })),
           },
         }}
-        onSaveRecommendation={saveChatSuggestion}
         wide={aiWide}
         onToggleWide={() => setAiWide((w) => !w)}
       />

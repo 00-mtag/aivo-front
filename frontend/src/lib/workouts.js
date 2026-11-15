@@ -99,3 +99,134 @@ export function timedSeconds(reps) {
   const n = parseFloat(m[1])
   return Math.round(/^m/i.test(m[2]) ? n * 60 : n)
 }
+
+/* ---------- equipment: where and how the user trains ---------- */
+export const EQUIPMENT = [
+  { id: 'bodyweight', label: 'Bodyweight' },
+  { id: 'dumbbell', label: 'Dumbbells' },
+  { id: 'barbell', label: 'Barbell' },
+  { id: 'machine', label: 'Machines' },
+  { id: 'cable', label: 'Cables' },
+  { id: 'kettlebell', label: 'Kettlebell' },
+  { id: 'band', label: 'Bands' },
+]
+export const EQUIPMENT_IDS = EQUIPMENT.map((e) => e.id)
+export const TRAIN_PLACES = [
+  { id: 'home', title: 'At home', desc: 'No equipment needed', equipment: ['bodyweight'] },
+  { id: 'homeWeights', title: 'Home with weights', desc: 'Dumbbells, kettlebell or bands', equipment: ['bodyweight', 'dumbbell', 'kettlebell', 'band'] },
+  { id: 'gym', title: 'At the gym', desc: 'Machines, barbells and cables', equipment: EQUIPMENT_IDS },
+]
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x))
+export const placeOf = (list) => TRAIN_PLACES.find((p) => sameSet(p.equipment, list ?? []))?.id ?? 'custom'
+export const placeLabel = (list) => TRAIN_PLACES.find((p) => p.id === placeOf(list))?.title ?? 'Custom equipment'
+export const equipmentLabel = (id) => EQUIPMENT.find((e) => e.id === id)?.label ?? id
+
+// The catalog may or may not say what equipment an exercise needs. If it does we use it, otherwise we read it from the name.
+const EXPLICIT = [
+  ['dumbbell', /dumb+ell|\bdb\b|goblet|arnold/i],
+  ['kettlebell', /kettlebell|\bkb\b/i],
+  ['band', /\bbands?\b|banded|resistance/i],
+  ['cable', /\bcable\b|face pull|pushdown|pulldown/i],
+  ['machine', /\bmachine\b|leg press|leg extension|leg curl|pec deck|hack squat|smith|treadmill|elliptical|stair ?(climber|master)|stationary|spin bike|\bcycl|rowing|assisted|seated row|chest press/i],
+  ['barbell', /barbell|ez[- ]?bar|t-bar|trap bar/i],
+  ['barbell', /bench press|deadlift|back squat|front squat|overhead press|military press|bent[- ]?over row|power clean|snatch|good morning|hip thrust/i],
+]
+const tagOf = (s) => {
+  const t = String(s).toLowerCase()
+  if (/dumb/.test(t)) return 'dumbbell'
+  if (/kettle/.test(t)) return 'kettlebell'
+  if (/band/.test(t)) return 'band'
+  if (/cable/.test(t)) return 'cable'
+  if (/machine/.test(t)) return 'machine'
+  if (/barbell|\bbar\b/.test(t)) return 'barbell'
+  if (/body|none|no equip|mat/.test(t)) return 'bodyweight'
+  return null
+}
+export function inferEquipment(name, raw) {
+  const fromRaw = (Array.isArray(raw) ? raw : raw ? [raw] : []).map(tagOf).filter(Boolean)
+  if (fromRaw.length) return [...new Set(fromRaw)]
+  const hit = EXPLICIT.find(([, re]) => re.test(name ?? ''))
+  return [hit ? hit[0] : 'bodyweight']
+}
+
+const MUSCLE_RULES = [
+  ['Full body', /thruster|\bclean\b|snatch|turkish|man ?maker|full[- ]body/i],
+  ['Cardio', /\brun|jog|sprint|jump|burpee|climber|bike|cycl|rope|skipping|elliptical|treadmill|stair|high knees|skater|cardio|jacks?\b|rowing/i],
+  ['Core', /plank|crunch|sit[- ]?up|twist|leg raise|\babs?\b|\bcore\b|dead bug|bird dog|v-up|hollow|flutter|bicycle/i],
+  ['Shoulders', /shoulder|lateral|overhead|military|arnold|front raise|rear delt|upright/i],
+  ['Chest', /chest|bench|push[- ]?up|pushup|\bfly\b|\bflye|pec\b|pec deck/i],
+  ['Back', /\brow\b|pull[- ]?up|chin[- ]?up|pulldown|\blat\b|\bback\b|deadlift|superman|face pull|shrug/i],
+  ['Legs', /squat|lunge|leg (curl|extension|press)|step[- ]?up|wall sit/i],
+  ['Arms', /curl|tricep|bicep|\bdips?\b|skull|hammer|kickback|pushdown/i],
+  ['Legs', /leg|calf|glute|hip|bridge|thrust|hamstring|quad/i],
+]
+export function inferMuscle(name, raw) {
+  const exact = MUSCLES.find((m) => m.toLowerCase() === String(raw ?? '').trim().toLowerCase())
+  if (exact) return exact
+  for (const text of [raw, name]) {
+    if (!text) continue
+    const hit = MUSCLE_RULES.find(([, re]) => re.test(String(text)))
+    if (hit) return hit[0]
+  }
+  return 'Full body'
+}
+
+// Exercises that are held or run for a length of time instead of counted in reps.
+const TIMED_RE = /plank|\bhold\b|wall sit|dead hang|\bhang\b|stretch|l-sit|jump(ing)? rope|skipping|jumping jacks?|mountain climbers?|high knees|\brunning|\bjog|sprint|cycling|treadmill|elliptical|rowing machine|stair ?(climber|master)|shadow ?box|battle rope|bear crawl/i
+export const isTimedExercise = (raw) => raw?.weightORduration === 'duration' || TIMED_RE.test(raw?.name ?? '')
+
+// One normal shape for an exercise from the catalog (works with the raw API row or an already-normal one).
+export function enrichExercise(raw) {
+  const name = String(raw.name ?? '')
+  const timed = isTimedExercise({ name, weightORduration: raw.weightORduration })
+  return {
+    id: Number(raw.exercise_id ?? raw.id),
+    name,
+    timed,
+    weightORduration: timed ? 'duration' : 'weight',
+    muscle: inferMuscle(name, raw.muscle_group ?? raw.muscle ?? raw.target_muscle ?? raw.catalog_muscle_group),
+    equipment: inferEquipment(name, raw.equipment ?? raw.equipment_type ?? raw.equipments),
+  }
+}
+export const exerciseFits = (ex, selected) => (ex.equipment ?? inferEquipment(ex.name)).every((t) => selected.includes(t))
+
+/* ---------- timed exercises ---------- */
+export const DURATION_CHIPS = [15, 20, 30, 45, 60, 90, 120, 180, 300]
+export function fmtDuration(sec) {
+  const s = Math.max(0, Math.round(Number(sec) || 0))
+  if (s < 60) return `${s} sec`
+  const m = Math.floor(s / 60), r = s % 60
+  return r ? `${m} min ${r} sec` : `${m} min`
+}
+export const fmtClock = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+
+// Seconds for a timed exercise, or null when it is counted in reps.
+export function exerciseSeconds(e) {
+  if (!e) return null
+  const fromDuration = e.duration ? (timedSeconds(e.duration) ?? (Number(e.duration) > 0 ? Number(e.duration) : null)) : null
+  if (fromDuration) return Math.round(fromDuration)
+  const fromReps = timedSeconds(e.reps ?? '')
+  if (fromReps) return fromReps
+  return e.weightORduration === 'duration' ? 30 : null
+}
+export function exerciseTarget(e) {
+  const seconds = exerciseSeconds(e)
+  return seconds != null
+    ? { timed: true, seconds, label: fmtDuration(seconds) }
+    : { timed: false, seconds: null, label: `${e?.reps ?? 10} reps` }
+}
+export const exerciseLine = (e) => {
+  const t = exerciseTarget(e)
+  return `${e.sets} sets · ${t.label}${!t.timed && e.weight ? ` · ${e.weight}` : ''}`
+}
+
+/* ---------- equipment saved per plan (the server has no field for it, so it is kept on this device) ---------- */
+const eqKey = () => userKey('aivo_workout_equipment')
+export function loadEquipment() {
+  try {
+    const v = JSON.parse(localStorage.getItem(eqKey()) ?? 'null')
+    if (v && typeof v === 'object' && !Array.isArray(v)) return v
+  } catch { /* fall through */ }
+  return {}
+}
+export const saveEquipment = (map) => { try { localStorage.setItem(eqKey(), JSON.stringify(map)) } catch { /* storage full or blocked */ } }
