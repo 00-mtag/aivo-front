@@ -5,9 +5,10 @@ import TextField from '../components/TextField'
 import PasswordStrength from '../components/PasswordStrength'
 import Button from '../components/Button'
 import GoogleButton from '../components/GoogleButton'
-import { errorsFrom, googleLoginRequest, registerRequest, saveSession } from '../lib/api'
+import { clearSession, errorsFrom, googleLoginRequest, registerRequest, saveSession } from '../lib/api'
 import LoadingScreen from '../components/LoadingScreen'
 import { markPanelLoaded } from '../lib/usePanelLoader'
+import { refreshProfileFromServer } from '../lib/profile'
 
 export default function Register() {
   const navigate = useNavigate()
@@ -22,6 +23,18 @@ export default function Register() {
   const confirmError = errors.confirm && !matches ? errors.confirm : undefined // drops away once the passwords match
   const showMatch = form.confirm.length > 0 && !confirmError
 
+  const completeSignIn = async (data) => {
+    saveSession(data)
+    try {
+      await refreshProfileFromServer()
+    } catch (error) {
+      clearSession()
+      throw error
+    }
+    markPanelLoaded('dashboard')
+    setSignedIn(true)
+  }
+
   const signInWithGoogle = async (credential) => {
     setBusy(true)
     setErrors({})
@@ -29,9 +42,7 @@ export default function Register() {
     setNotice('')
     try {
       const { data } = await googleLoginRequest(credential)
-      saveSession(data)
-      markPanelLoaded('dashboard')
-      setSignedIn(true)
+      await completeSignIn(data)
     } catch (err) {
       const r = errorsFrom(err)
       setErrors(r.fields)
@@ -58,7 +69,7 @@ export default function Register() {
         email: form.email.trim(),
         password: form.password,
       })
-      if (data?.token ?? data?.access_token) { saveSession(data); markPanelLoaded('dashboard'); setSignedIn(true) }
+      if (data?.token ?? data?.access_token) await completeSignIn(data)
       else navigate('/login', { replace: true, state: { registered: true } })
     } catch (err) {
       const r = errorsFrom(err)

@@ -159,47 +159,63 @@ export default function Onboarding() {
   const finish = async () => {
     setSaving(true)
     setSaveError('')
-    const profile = {
-      gender,
-      goal,
-      experience: level,
-      birthDate,
-      heightCm,
-      weightKg: Math.round(weightKg * 10) / 10,
-      phoneNumber: phoneNumber.trim(),
-      activityLevel,
-      tdee,
-      targetWeightKg: target == null ? null : Math.round(target * 10) / 10,
-      allergies: [...allergies, ...(allergyOther && otherAllergy.trim() ? [otherAllergy.trim()] : [])],
-      healthConditions: [...healthConditions, ...(conditionOther && otherCondition.trim() ? [otherCondition.trim()] : [])],
-      dietaryPreferences: diets.join(', '),
-      completedAt: new Date().toISOString(),
-    }
-    const form = new FormData()
-    Object.entries({
-      age,
-      gender,
-      phone_number: profile.phoneNumber,
-      birth_date: birthDate,
-      height: heightCm,
-      weight: profile.weightKg,
-      activity_level: activityLevel,
-      fitness_goal: goal,
-      experience_level: level,
-      target_weight: profile.targetWeightKg ?? '',
-      dietary_preferences: profile.dietaryPreferences,
-    }).forEach(([key, value]) => form.append(key, String(value)))
-    form.append('allergies_present', '1')
-    form.append('health_conditions_present', '1')
-    profile.allergies.forEach((value) => form.append('allergies[]', value))
-    profile.healthConditions.forEach((value) => form.append('health_conditions[]', value))
-    if (profilePicture) form.append('profile_picture', profilePicture)
-    form.append('_method', 'PUT')
-
     try {
-      const { data } = await api.post('/profile', form)
-      const saved = { ...profile, tdee: Number(data.profile.tdee) }
-      saveProfile(saved)
+      const profile = {
+        gender,
+        goal,
+        experience: level,
+        birthDate,
+        heightCm,
+        weightKg: Math.round(weightKg * 10) / 10,
+        phoneNumber: phoneNumber.trim(),
+        activityLevel,
+        tdee,
+        targetWeightKg: target == null ? null : Math.round(target * 10) / 10,
+        allergies: [...allergies, ...(allergyOther && otherAllergy.trim() ? [otherAllergy.trim()] : [])],
+        healthConditions: [...healthConditions, ...(conditionOther && otherCondition.trim() ? [otherCondition.trim()] : [])],
+        dietaryPreferences: diets.join(', '),
+        completedAt: new Date().toISOString(),
+      }
+      const form = new FormData()
+      Object.entries({
+        age,
+        gender,
+        phone_number: profile.phoneNumber,
+        birth_date: birthDate,
+        height: heightCm,
+        weight: profile.weightKg,
+        activity_level: activityLevel,
+        fitness_goal: goal,
+        experience_level: level,
+        target_weight: profile.targetWeightKg ?? '',
+        dietary_preferences: profile.dietaryPreferences,
+      }).forEach(([key, value]) => form.append(key, String(value)))
+      form.append('allergies_present', '1')
+      form.append('health_conditions_present', '1')
+      profile.allergies.forEach((value) => form.append('allergies[]', value))
+      profile.healthConditions.forEach((value) => form.append('health_conditions[]', value))
+      if (profilePicture) form.append('profile_picture', profilePicture)
+      form.append('_method', 'PUT')
+
+      let saved
+      try {
+        const { data } = await api.post('/profile', form)
+        saved = { ...profile, tdee: Number(data.profile.tdee) }
+        saveProfile(saved)
+      } catch (error) {
+        const { fields, form: message } = errorsFrom(error)
+        setSaveError(Object.values(fields)[0] || message)
+        return
+      }
+
+      try {
+        await api.post('/email/verification-notification')
+      } catch (error) {
+        const { fields, form: message } = errorsFrom(error)
+        setSaveError(`Your profile was saved, but the verification email could not be sent. ${Object.values(fields)[0] || message}`)
+        return
+      }
+
       try {
         // Progress: starting weight and daily targets. Never block finishing setup.
         const rec = recommend(saved)
@@ -207,9 +223,6 @@ export default function Onboarding() {
         logWeight(saved.weightKg)
       } catch { /* progress is optional */ }
       navigate('/app', { replace: true })
-    } catch (error) {
-      const { fields, form: message } = errorsFrom(error)
-      setSaveError(Object.values(fields)[0] || message)
     } finally {
       setSaving(false)
     }

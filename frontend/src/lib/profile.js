@@ -1,5 +1,6 @@
-// Onboarding answers are kept per user in localStorage until the Laravel side can store them.
-// TODO: POST the profile to the backend in Onboarding.jsx and read it back after login.
+import { api } from './api'
+
+// Keep the profile locally for the route guard and UI; the backend remains authoritative.
 export const userKey = (prefix) => {
   try {
     const u = JSON.parse(localStorage.getItem('aivo_user') ?? 'null')
@@ -10,7 +11,43 @@ export const getProfile = () => {
   try { return JSON.parse(localStorage.getItem(userKey('aivo_profile')) ?? 'null') } catch { return null }
 }
 export const saveProfile = (p) => localStorage.setItem(userKey('aivo_profile'), JSON.stringify(p))
+export const clearProfile = () => localStorage.removeItem(userKey('aivo_profile'))
 export const hasProfile = () => !!getProfile()
+
+export async function refreshProfileFromServer() {
+  let data
+  try {
+    ({ data } = await api.get('/profile'))
+  } catch (error) {
+    if (error.response?.status === 404) {
+      clearProfile()
+      return false
+    }
+    throw error
+  }
+
+  const profile = data?.profile
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    throw new Error('The saved profile could not be loaded.')
+  }
+
+  saveProfile({
+    ...profile,
+    goal: profile.fitness_goal ?? profile.goal ?? '',
+    experience: profile.experience_level ?? profile.experience ?? '',
+    birthDate: profile.birth_date ?? profile.birthDate ?? '',
+    heightCm: profile.height ?? profile.heightCm ?? null,
+    weightKg: profile.weight ?? profile.weightKg ?? null,
+    phoneNumber: profile.phone_number ?? profile.phoneNumber ?? '',
+    activityLevel: profile.activity_level ?? profile.activityLevel ?? '',
+    targetWeightKg: profile.target_weight ?? profile.targetWeightKg ?? null,
+    dietaryPreferences: profile.dietary_preferences ?? profile.dietaryPreferences ?? '',
+    healthConditions: Array.isArray(profile.health_conditions) ? profile.health_conditions : [],
+    allergies: Array.isArray(profile.allergies) ? profile.allergies : [],
+  })
+
+  return true
+}
 
 const ACTIVITY_MULTIPLIERS = {
   Sedentary: 1.2,

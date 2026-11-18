@@ -850,8 +850,12 @@ function ConfirmUpdate({ rows, busy, onCancel, onConfirm }) {
   )
 }
 
-function ProfileView({ initial, base, imperial, onSave, onDirty }) {
+function ProfileView({ initial, base, imperial, accountUser, onUpdateEmail, onSendVerification, onSave, onDirty }) {
   const [f, setF] = useState(initial)
+  const [email, setEmail] = useState(accountUser?.email ?? '')
+  const [emailBusy, setEmailBusy] = useState(false)
+  const [emailError, setEmailError] = useState('')
+  const [emailNotice, setEmailNotice] = useState('')
   const [cards, setCards] = useState({ about: false, body: false, goal: false, training: false })   // all start collapsed
   const [picker, setPicker] = useState(null)   // 'birthday' | 'height' | 'weight' | 'target' | null
   const [hUnit, setHUnit] = useState(imperial ? 'ft' : 'cm')
@@ -866,10 +870,13 @@ function ProfileView({ initial, base, imperial, onSave, onDirty }) {
 
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }))
   const blur = (k) => () => setTouched((t) => ({ ...t, [k]: true }))
+  const emailVerified = Boolean(accountUser?.email_verified_at)
+  const emailChanged = email.trim() !== accountUser?.email
+  const validEmail = /^\S+@\S+\.\S+$/.test(email.trim())
   const toggleCard = (k) => { setCards((c) => ({ ...c, [k]: !c[k] })); setPicker(null) }
   const togglePicker = (k) => setPicker((p) => (p === k ? null : k))
   const dirty = JSON.stringify(f) !== JSON.stringify(initial)
-  useEffect(() => { onDirty(dirty) }, [dirty])          // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onDirty(dirty || emailChanged) }, [dirty, emailChanged])          // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => onDirty(false), [])             // eslint-disable-line react-hooks/exhaustive-deps
 
   const errors = validate(f)
@@ -912,6 +919,39 @@ function ProfileView({ initial, base, imperial, onSave, onDirty }) {
     finally { setBusy(false) }
   }
 
+  const saveEmail = async () => {
+    if (!validEmail) {
+      setEmailError('Enter a valid email address.')
+      setEmailNotice('')
+      return
+    }
+    setEmailBusy(true)
+    setEmailError('')
+    setEmailNotice('')
+    try {
+      const updatedUser = await onUpdateEmail(email.trim())
+      setEmail(updatedUser.email)
+      setEmailNotice('Email updated. Send a verification link to confirm it.')
+    } catch (e2) {
+      setEmailError(e2?.message || 'Could not update your email address.')
+    } finally {
+      setEmailBusy(false)
+    }
+  }
+  const sendVerification = async () => {
+    setEmailBusy(true)
+    setEmailError('')
+    setEmailNotice('')
+    try {
+      const message = await onSendVerification()
+      setEmailNotice(message || `A verification link was sent to ${accountUser.email}.`)
+    } catch (e2) {
+      setEmailError(e2?.message || 'Could not send a verification link.')
+    } finally {
+      setEmailBusy(false)
+    }
+  }
+
   const aboutSummary = [f.name.trim(), Number.isFinite(age) ? `${age} yrs` : '', f.gender].filter(Boolean).join(' · ') || 'Add your details'
   const bodySummary = [fmtHeight(f.heightCm, hUnit), fmtWeight(f.weightKg, wUnit)].filter(Boolean).join(' · ') || 'Add your height and weight'
   const trainSummary = [f.level, f.days ? `${f.days} day${f.days > 1 ? 's' : ''} a week` : ''].filter(Boolean).join(' · ') || 'Set up your training'
@@ -942,6 +982,46 @@ function ProfileView({ initial, base, imperial, onSave, onDirty }) {
       </section>
 
       <Card id="about" icon={User} title="About you" summary={aboutSummary} open={cards.about} onToggle={() => toggleCard('about')} alert={Boolean(aboutBad) && !cards.about}>
+        {accountUser?.email && (
+          <div className="space-y-2.5">
+            <Field id="pf-email" label="Email address">
+              <input
+                id="pf-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setEmailError(''); setEmailNotice('') }}
+                disabled={emailVerified || emailBusy}
+                aria-invalid={Boolean(emailError || (emailChanged && !validEmail))}
+                aria-describedby={emailError ? 'pf-email-error' : undefined}
+                className={`${field} disabled:cursor-not-allowed disabled:opacity-60`}
+              />
+            </Field>
+            <p className={`text-[11px] ${emailVerified ? 'text-emerald-300' : 'text-amber-200'}`}>
+              {emailVerified ? 'Email verified' : 'Email not verified'}
+            </p>
+            {emailError && <p id="pf-email-error" role="alert" className="text-[11px] text-red-300">{emailError}</p>}
+            {emailChanged && !validEmail && !emailError && <p role="alert" className="text-[11px] text-red-300">Enter a valid email address.</p>}
+            {emailNotice && <Note tone="ok">{emailNotice}</Note>}
+            {!emailVerified && (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                {emailChanged && (
+                  <button type="button" onClick={saveEmail} disabled={emailBusy || !validEmail || !onUpdateEmail} className={`${primaryBtn} flex-1`}>
+                    {emailBusy ? 'Saving' : 'Save email'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={sendVerification}
+                  disabled={emailBusy || emailChanged || !onSendVerification}
+                  className={`${emailChanged ? ghostBtn : primaryBtn} flex-1`}
+                >
+                  {emailBusy ? 'Please wait' : 'Send verification link'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <Field id="pf-name" label="Name" error={shown('name')}>
           <input id="pf-name" value={f.name} onChange={(e) => set('name', e.target.value)} onBlur={blur('name')} autoComplete="name" placeholder="Your name"
             aria-invalid={Boolean(shown('name'))} className={`${field} ${shown('name') ? 'border-red-500/60' : ''}`} />
@@ -1053,6 +1133,9 @@ function ProfileView({ initial, base, imperial, onSave, onDirty }) {
  *  onChangePassword({ currentPassword, newPassword })  -> Promise, throw an Error to show a message
  *  onDeleteAccount()                                   -> Promise, throw an Error to show a message
  *  onSendFeedback({ category, message, diagnostics })  -> Promise, falls back to an email draft
+ *  accountUser                                         -> current authenticated account, including email verification status
+ *  onUpdateEmail(email)                                -> Promise<user>
+ *  onSendVerification()                                -> Promise<string>
  *  exportExtra()                                       -> Promise<object> merged into the data download
  *  onPrefsChange(prefs)                                -> called whenever a preference changes
  *  profile                                             -> your saved profile (getProfile()), used to fill the profile form
@@ -1063,7 +1146,7 @@ function ProfileView({ initial, base, imperial, onSave, onDirty }) {
  */
 export default function MenuDrawer({
   open, onClose, name = 'there', rec, onLogout,
-  onChangePassword, onDeleteAccount, onSendFeedback, exportExtra, onPrefsChange, profile, onSaveProfile,
+  onChangePassword, onDeleteAccount, onSendFeedback, onUpdateEmail, onSendVerification, exportExtra, onPrefsChange, profile, accountUser, onSaveProfile,
   supportEmail = 'support@aivo.app',
 }) {
   const closeRef = useRef(null)
@@ -1218,7 +1301,7 @@ export default function MenuDrawer({
             </div>
           )}
 
-          {view === 'profile' && <ProfileView initial={formInitial} base={savedProfile} imperial={imperial} onSave={saveProfile} onDirty={(d) => { dirtyRef.current = d }} />}
+          {view === 'profile' && <ProfileView initial={formInitial} base={savedProfile} imperial={imperial} accountUser={accountUser} onUpdateEmail={onUpdateEmail} onSendVerification={onSendVerification} onSave={saveProfile} onDirty={(d) => { dirtyRef.current = d }} />}
           {view === 'settings' && <SettingsView prefs={prefs} setPref={setPref} perm={perm} setReminders={setReminders} onChangePassword={onChangePassword} toast={toast} />}
           {view === 'privacy' && (
             <PrivacyView prefs={prefs} setPref={setPref} name={displayName} rec={rec} exportExtra={exportExtra} onDeleteAccount={onDeleteAccount}

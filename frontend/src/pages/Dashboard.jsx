@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
@@ -8,7 +8,7 @@ import NotificationsBell from '../components/dashboard/NotificationsBell'
 import { BmiCard, FitnessSummary } from '../components/dashboard/Cards'
 import Suggestions from '../components/dashboard/Suggestions'
 import WeekCalendar from '../components/dashboard/WeekCalendar'
-import { api, clearSession, errorsFrom } from '../lib/api'
+import { api, clearSession, errorsFrom, saveSession } from '../lib/api'
 import { calculateProfileTdee, getProfile, recommendedDailyCalories, saveProfile } from '../lib/profile'
 import { recommend, todayFocus } from '../lib/recommend'
 import { loadPlans } from '../lib/workouts'
@@ -26,6 +26,10 @@ function userName() {
   } catch { return 'there' }
 }
 
+function currentUser() {
+  try { return JSON.parse(localStorage.getItem('aivo_user') ?? 'null') } catch { return null }
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [loading, finishLoading] = usePanelLoader('dashboard')
@@ -39,8 +43,17 @@ export default function Dashboard() {
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
   const [menuOpen, setMenuOpen] = useState(false)
+  const [accountUser, setAccountUser] = useState(currentUser)
   const [, refresh] = useState(0)   // re-reads the profile after it is edited in the menu
   const menuBtn = useRef(null)
+  useEffect(() => {
+    const syncAccountUser = (event) => {
+      if (event.key !== 'aivo_user') return
+      try { setAccountUser(JSON.parse(event.newValue ?? 'null')) } catch { setAccountUser(null) }
+    }
+    window.addEventListener('storage', syncAccountUser)
+    return () => window.removeEventListener('storage', syncAccountUser)
+  }, [])
   const onLoaded = () => { finishLoading(); window.scrollTo(0, 0) }   // widgets that scroll themselves into view while loading cannot leave the page halfway down
   const closeMenu = () => { setMenuOpen(false); menuBtn.current?.focus() }
   const saveProfileValues = async (values) => {
@@ -89,6 +102,29 @@ export default function Dashboard() {
     }
     refresh((n) => n + 1)
   }
+  const updateAccountEmail = async (email) => {
+    try {
+      const { data } = await api.patch('/account/email', { email })
+      if (!data?.user) throw new Error('The updated account could not be loaded.')
+      const currentProfile = getProfile()
+      saveSession({ user: data.user })
+      if (currentProfile) saveProfile(currentProfile)
+      setAccountUser(data.user)
+      return data.user
+    } catch (error) {
+      const result = errorsFrom(error)
+      throw new Error(result.form || result.fields.email || 'Could not update your email address.', { cause: error })
+    }
+  }
+  const sendEmailVerification = async () => {
+    try {
+      const { data } = await api.post('/email/verification-notification')
+      return data.message
+    } catch (error) {
+      const result = errorsFrom(error)
+      throw new Error(result.form || 'Could not send a verification link.', { cause: error })
+    }
+  }
   const logout = () => { clearSession(); resetPanelLoaders(); navigate('/login', { replace: true }) }
   const iconBtn = 'grid h-10 w-10 place-items-center rounded-xl transition hover:bg-white/5'
 
@@ -134,7 +170,8 @@ export default function Dashboard() {
       </main>
 
       <MenuDrawer open={menuOpen} onClose={closeMenu} name={userName()} rec={rec} onLogout={logout}
-        profile={getProfile()} onSaveProfile={saveProfileValues} />
+        profile={getProfile()} accountUser={accountUser} onUpdateEmail={updateAccountEmail}
+        onSendVerification={sendEmailVerification} onSaveProfile={saveProfileValues} />
       {loading && <LoadingScreen message="Loading your dashboard" onDone={onLoaded} />}
     </div>
   )
