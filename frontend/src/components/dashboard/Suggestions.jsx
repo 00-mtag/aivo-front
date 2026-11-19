@@ -5,6 +5,7 @@ import { Card, IconBox } from './Cards'
 import { newPlan, workoutBody } from '../../lib/workouts'
 import { dayTotals, loadNutrition, toYmd } from '../../lib/nutrition'
 import { api, errorsFrom } from '../../lib/api'
+import { STALE, cachedGet } from '../../lib/cache'
 
 export default function Suggestions({ rec }) {
   const navigate = useNavigate()
@@ -27,8 +28,8 @@ export default function Suggestions({ rec }) {
 
   useEffect(() => {
     let active = true
-    api.get('/workouts')
-      .then(async ({ data }) => {
+    cachedGet('/workouts')
+      .then(async (data) => {
         if (!Array.isArray(data?.workouts)) throw new Error('The workout list could not be loaded.')
         if (!active) return
         if (data.workouts.length > 0) {
@@ -36,7 +37,7 @@ export default function Suggestions({ rec }) {
           return
         }
 
-        const { data: exerciseData } = await api.get('/exercises', { params: { best_for: rec.goal } })
+        const exerciseData = await cachedGet('/exercises', { params: { best_for: rec.goal }, staleTime: STALE.catalog })
         if (!Array.isArray(exerciseData?.exercises)) throw new Error('The exercise list could not be loaded.')
         if (active) {
           setWorkoutLookup({

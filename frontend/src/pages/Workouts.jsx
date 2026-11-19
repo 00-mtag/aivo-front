@@ -20,10 +20,19 @@ import {
 import { api, errorsFrom } from '../lib/api'
 import { userKey } from '../lib/profile'
 import { logWorkout, syncWorkoutPlan } from '../lib/progress'
+import { STALE, cachedGet, patchCache, peek } from '../lib/cache'
 import useProgress from '../lib/useProgress'
 
 const AI_SUGGESTIONS = ['Suggest a workout for muscle gain', 'How many calories should I eat?', 'Create a cardio plan']
 const todayName = () => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()]
+
+// Keep the saved copy of the workout list in step with what you just changed.
+const cachePut = (raw) => patchCache('/workouts', (d) => {
+  const list = d?.workouts ?? []
+  const i = list.findIndex((w) => Number(w.workout_id) === Number(raw.workout_id))
+  return { ...d, workouts: i >= 0 ? list.map((w, k) => (k === i ? raw : w)) : [raw, ...list] }
+})
+const cacheRemove = (id) => patchCache('/workouts', (d) => ({ ...d, workouts: (d?.workouts ?? []).filter((w) => Number(w.workout_id) !== Number(id)) }))
 
 const flag = (name) => { try { return localStorage.getItem(userKey(name)) === '1' } catch { return false } }
 const setFlag = (name) => { try { localStorage.setItem(userKey(name), '1') } catch { /* storage blocked */ } }
@@ -69,31 +78,32 @@ export default function Workouts() {
   }
   useEffect(() => () => clearTimeout(toastTimer.current), [])
 
+  // Load the plans. If we already have a copy, show it at once and only refresh it quietly when it is old.
   useEffect(() => {
     let cancelled = false
-    setPlansLoading(true)
-    setPlansError('')
-    api.get('/workouts')
-      .then(({ data }) => {
-        if (cancelled) return
-        if (!Array.isArray(data?.workouts)) {
-          setPlansError('The workout list could not be loaded.')
-          return
-        }
-        const loadedPlans = data.workouts.map(normalizeWorkout)
-        setPlans(loadedPlans)
-        savePlans(loadedPlans)
-        setPlansLoaded(true)
-        setOpenId(loadedPlans[0]?.id ?? null)
-        // First visit with nothing set up yet: show the short walkthrough once.
-        if (!loadedPlans.length && !flag('aivo_workouts_guide_seen')) setGuideOpen(true)
-      })
-      .catch((error) => {
-        if (!cancelled) setPlansError(errorsFrom(error).form)
-      })
-      .finally(() => {
-        if (!cancelled) setPlansLoading(false)
-      })
+    const apply = (data) => {
+      if (cancelled) return
+      if (!Array.isArray(data?.workouts)) {
+        setPlansError('The workout list could not be loaded.')
+        return
+      }
+      const loadedPlans = data.workouts.map(normalizeWorkout)
+      setPlans(loadedPlans)
+      savePlans(loadedPlans)
+      setPlansLoaded(true)
+      setPlansError('')
+      setOpenId((current) => (current != null && loadedPlans.some((p) => p.id === current) ? current : loadedPlans[0]?.id ?? null))
+      // First visit with nothing set up yet: show the short walkthrough once.
+      if (!loadedPlans.length && !flag('aivo_workouts_guide_seen')) setGuideOpen(true)
+    }
+    const hit = reload === 0 ? peek('/workouts') : undefined
+    if (hit) { apply(hit.data); setPlansLoading(false) } else { setPlansLoading(true); setPlansError('') }
+    if (!hit || Date.now() - hit.at >= STALE.lists) {
+      cachedGet('/workouts', { force: true })
+        .then(apply)
+        .catch((error) => { if (!cancelled && !hit) setPlansError(errorsFrom(error).form) })   // a quiet refresh that fails keeps the saved copy
+        .finally(() => { if (!cancelled) setPlansLoading(false) })
+    }
     return () => { cancelled = true }
   }, [reload])
   useEffect(() => {
@@ -128,8 +138,8 @@ export default function Workouts() {
   useEffect(() => {
     if (exercisePlanId === null || !exerciseGoal) return undefined
     let cancelled = false
-    api.get('/exercises', { params: { best_for: exerciseGoal } })
-      .then(({ data }) => {
+    cachedGet('/exercises', { params: { best_for: exerciseGoal }, staleTime: STALE.catalog })
+      .then((data) => {
         if (cancelled) return
         if (!Array.isArray(data?.exercises)) {
           setExerciseCatalog({ goal: exerciseGoal, exercises: [], error: 'The exercise list could not be loaded.' })
@@ -160,12 +170,14 @@ export default function Workouts() {
         const plan = plans.find((item) => item.id === planModal.planId)
         const { data } = await api.put(`/workouts/${planModal.planId}`, workoutBody({ ...plan, ...fields }))
         const saved = normalizeWorkout(data.workout)
+        cachePut(data.workout)
         setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
         setPlanEquipment(saved.id, equipment)
         notify('Plan updated')
       } else {
         const { data } = await api.post('/workouts', workoutBody(newPlan(fields)))
         const saved = normalizeWorkout(data.workout)
+        cachePut(data.workout)
         setPlans((current) => [saved, ...current])
         setPlanEquipment(saved.id, equipment)
         setOpenId(saved.id)
@@ -212,6 +224,7 @@ export default function Workouts() {
     try {
       const { data } = await api.post('/workouts', workoutBody(plan))
       const saved = normalizeWorkout(data.workout)
+      cachePut(data.workout)
       setPlans((current) => [saved, ...current])
       setPlanEquipment(saved.id, equipment)
       setOpenId(saved.id)
@@ -225,29 +238,11 @@ export default function Workouts() {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
   }
-  const saveChatSuggestion = async ({ question, suggestion }) => {
-    if (plansLoading) throw new Error('Wait for your workout plans to finish loading before saving a suggestion.')
-    try {
-      const { data } = await api.post('/ai/suggestions/workout/save', { question, suggestion })
-      if (!data?.workout) throw new Error('The saved workout could not be loaded.')
-      const saved = normalizeWorkout(data.workout)
-      setPlans((current) => [saved, ...current.filter((item) => item.id !== saved.id)])
-      setPlanEquipment(saved.id, EQUIPMENT_IDS)
-      setOpenId(saved.id)
-      setNewId(saved.id)
-      setStatusFilter('all')
-      setGoalFilter('all')
-      setActionError('')
-      notify(`${saved.name} was saved to your workout plans.`)
-      return `${saved.name} was saved to your workout plans.`
-    } catch (error) {
-      throw new Error(error.response?.data?.message || error.message || 'This suggestion could not be saved.', { cause: error })
-    }
-  }
   const persistPlan = async (plan) => {
     try {
       const { data } = await api.put(`/workouts/${plan.id}`, workoutBody(plan))
       const saved = normalizeWorkout(data.workout)
+      cachePut(data.workout)
       setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
       setActionError('')
     } catch (error) {
@@ -258,6 +253,7 @@ export default function Workouts() {
     try {
       const { data } = await api.post('/workouts', workoutBody({ ...p, name: `${p.name} copy`.slice(0, 40) }))
       const saved = normalizeWorkout(data.workout)
+      cachePut(data.workout)
       setPlans((current) => [saved, ...current])
       setPlanEquipment(saved.id, p.equipment)
       setOpenId(saved.id)
@@ -273,6 +269,7 @@ export default function Workouts() {
     setBusyDelete(true)
     try {
       await api.delete(`/workouts/${p.id}`)
+      cacheRemove(p.id)
       setPlans((ps) => ps.filter((x) => x.id !== p.id))
       if (openId === p.id) setOpenId(null)
       setActionError('')
@@ -310,6 +307,7 @@ export default function Workouts() {
         schedule: { ...plan.schedule, [day]: next },
       }))
       const saved = normalizeWorkout(data.workout)
+      cachePut(data.workout)
       setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
       setActionError('')
       setSelectedDay(day)
@@ -329,6 +327,7 @@ export default function Workouts() {
         schedule: { ...plan.schedule, [day]: exercises },
       }))
       const saved = normalizeWorkout(data.workout)
+      cachePut(data.workout)
       setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
       setActionError('')
       setExModal(null)
@@ -493,8 +492,6 @@ export default function Workouts() {
         suggestions={AI_SUGGESTIONS}
         context={{
           page: 'Workout plans',
-          category: 'workout',
-          persistConversations: true,
           data: {
             loading: plansLoading,
             plans: allPlans.map((plan) => ({
@@ -511,7 +508,6 @@ export default function Workouts() {
             })),
           },
         }}
-        onSaveRecommendation={saveChatSuggestion}
         wide={aiWide}
         onToggleWide={() => setAiWide((w) => !w)}
       />

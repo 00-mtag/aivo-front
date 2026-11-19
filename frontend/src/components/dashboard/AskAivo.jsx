@@ -15,8 +15,14 @@ export default function AskAivo({ suggestions = SUGGESTIONS, context, onClose, b
   const { messages, busy, error, send, page } = useAivoChat(context)
   const [text, setText] = useState('')
   const endRef = useRef(null)
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, busy, error])
+  const acted = useRef(false)   // becomes true once the user sends something
+  // Keep the newest message in view, but ONLY after the user has used the chat.
+  // Doing it when the card first appears scrolled the whole page down to the chat.
+  useEffect(() => {
+    if (acted.current) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [messages, busy, error])
   const submit = (value) => {
+    acted.current = true
     send(value)
     setText('')
   }
