@@ -3,7 +3,7 @@ import { Dumbbell, Pencil, Search, Timer } from 'lucide-react'
 import Modal, { fieldClass, ghostBtn, goldBtn } from './Modal'
 import { Chip, Label, Stepper } from './controls'
 import {
-  DURATION_CHIPS, EQUIPMENT, EQUIPMENT_IDS, MUSCLES, enrichExercise, equipmentLabel, exerciseFits, exerciseSeconds,
+  DURATION_CHIPS, EQUIPMENT, EQUIPMENT_IDS, GOALS, MUSCLES, enrichExercise, equipmentLabel, exerciseFits, exerciseSeconds,
   exerciseTarget, fmtDuration, inferMuscle,
 } from '../../lib/workouts'
 
@@ -16,7 +16,7 @@ const Badge = ({ children, gold = false }) => (
 )
 
 export default function ExerciseModal({
-  exercise, startEditing, exerciseCatalog = [], exerciseGoal, exerciseNamesLoading = false, exerciseNamesError = '',
+  exercise, startEditing, exerciseCatalog = [], bestForFilter = 'all', onBestForChange, exerciseNamesLoading = false, exerciseNamesError = '',
   actionError = '', equipment, onSave, onDelete, onClose,
 }) {
   const isNew = !exercise
@@ -181,8 +181,18 @@ export default function ExerciseModal({
     }
 
     return (
-      <Modal title="Choose an exercise" subtitle={exerciseGoal ? `Best for ${exerciseGoal}. Tap one to continue.` : 'Tap one to continue.'} onClose={onClose} wide>
+      <Modal title="Choose an exercise" subtitle={bestForFilter === 'all' ? 'Showing all exercises. Tap one to continue.' : `Best for ${bestForFilter}. Tap one to continue.`} onClose={onClose} wide>
         {errorBox}
+        <Label>Best for</Label>
+        <select
+          aria-label="Filter exercises by goal"
+          value={bestForFilter}
+          onChange={(event) => onBestForChange?.(event.target.value)}
+          className={fieldClass}
+        >
+          <option value="all" className="bg-card">Show all exercises</option>
+          {GOALS.map((goal) => <option key={goal} value={goal} className="bg-card">{goal}</option>)}
+        </select>
         <label className="relative block">
           <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mute" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search (optional)" aria-label="Search exercises" className={`${fieldClass} !pl-10`} />
@@ -217,7 +227,7 @@ export default function ExerciseModal({
           {filtersOn && <button type="button" onClick={clear} className="font-semibold text-gold hover:underline">Clear filters</button>}
         </div>
         {exerciseNamesError && <p role="alert" className="mb-2 text-sm text-danger">{exerciseNamesError}</p>}
-        {!loading && !exerciseNamesError && catalog.length === 0 && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-mute">No exercises are available for this goal yet.</p>}
+        {!loading && !exerciseNamesError && catalog.length === 0 && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-mute">No exercises are available for this filter yet.</p>}
 
         {!loading && catalog.length > 0 && exact.length === 0 && (
           <div className="mb-4 rounded-2xl border border-gold/30 bg-gold/5 p-4" role="status">

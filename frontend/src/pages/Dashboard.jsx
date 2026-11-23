@@ -8,7 +8,7 @@ import NotificationsBell from '../components/dashboard/NotificationsBell'
 import { BmiCard, FitnessSummary } from '../components/dashboard/Cards'
 import Suggestions from '../components/dashboard/Suggestions'
 import WeekCalendar from '../components/dashboard/WeekCalendar'
-import { api, clearSession, errorsFrom } from '../lib/api'
+import { api, clearSession, errorsFrom, saveSession } from '../lib/api'
 import { calculateProfileTdee, getProfile, recommendedDailyCalories, saveProfile } from '../lib/profile'
 import { recommend, todayFocus } from '../lib/recommend'
 import { loadPlans } from '../lib/workouts'
@@ -27,6 +27,13 @@ function userName() {
   } catch { return 'there' }
 }
 
+function sessionUser() {
+  try {
+    const user = JSON.parse(localStorage.getItem('aivo_user') ?? 'null')
+    return user && typeof user === 'object' && !Array.isArray(user) ? user : null
+  } catch { return null }
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [loading, finishLoading] = usePanelLoader('dashboard')
@@ -40,6 +47,7 @@ export default function Dashboard() {
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
   const [menuOpen, setMenuOpen] = useState(false)
+  const [accountUser, setAccountUser] = useState(sessionUser)
   const [, refresh] = useState(0)   // re-reads the profile after it is edited in the menu
   const menuBtn = useRef(null)
   const onLoaded = () => { finishLoading(); window.scrollTo(0, 0) }   // widgets that scroll themselves into view while loading cannot leave the page halfway down
@@ -90,6 +98,24 @@ export default function Dashboard() {
     }
     refresh((n) => n + 1)
   }
+  const updateAccountEmail = async (email) => {
+    try {
+      const { data } = await api.put('/user/email', { email })
+      saveSession({ user: data.user })
+      setAccountUser(data.user)
+      return data.user
+    } catch (error) {
+      throw new Error(errorsFrom(error).form || 'Your email could not be updated.', { cause: error })
+    }
+  }
+  const sendVerificationEmail = async () => {
+    try {
+      const { data } = await api.post('/email/verification-notification')
+      return data.message
+    } catch (error) {
+      throw new Error(errorsFrom(error).form || 'Could not send a verification link.', { cause: error })
+    }
+  }
   const logout = () => { clearSession(); resetPanelLoaders(); clearCache(); navigate('/login', { replace: true }) }
   const iconBtn = 'grid h-10 w-10 place-items-center rounded-xl transition hover:bg-white/5'
 
@@ -123,6 +149,8 @@ export default function Dashboard() {
           </div>
           <AskAivo context={{
             page: 'Dashboard',
+            category: 'general',
+            persistConversations: true,
             data: {
               fitnessGoal: rec.goal,
               experienceLevel: rec.level,
@@ -135,7 +163,8 @@ export default function Dashboard() {
       </main>
 
       <MenuDrawer open={menuOpen} onClose={closeMenu} name={userName()} rec={rec} onLogout={logout}
-        profile={getProfile()} onSaveProfile={saveProfileValues} />
+        profile={getProfile()} accountUser={accountUser} onSaveProfile={saveProfileValues}
+        onUpdateEmail={updateAccountEmail} onSendVerification={sendVerificationEmail} />
       {loading && <LoadingScreen message="Loading your dashboard" onDone={onLoaded} />}
     </div>
   )

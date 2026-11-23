@@ -200,7 +200,11 @@ export default function Onboarding() {
       let saved
       try {
         const { data } = await api.post('/profile', form)
-        saved = { ...profile, tdee: Number(data.profile.tdee) }
+        saved = {
+          ...profile,
+          tdee: Number(data.profile.tdee),
+          profile_picture: data.profile.profile_picture ?? null,
+        }
         saveProfile(saved)
       } catch (error) {
         const { fields, form: message } = errorsFrom(error)

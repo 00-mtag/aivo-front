@@ -132,21 +132,23 @@ export default function Workouts() {
   const exPlan = exModal && allPlans.find((p) => p.id === exModal.planId)
   const exerciseGoal = exPlan?.goal
   const exercisePlanId = exModal?.planId ?? null
+  const exerciseFilter = exModal?.bestFor ?? exerciseGoal ?? 'all'
   const sessionPlan = session && allPlans.find((p) => p.id === session.planId)
   const calPlan = calId && allPlans.find((p) => p.id === calId)
 
   useEffect(() => {
-    if (exercisePlanId === null || !exerciseGoal) return undefined
+    if (exercisePlanId === null) return undefined
     let cancelled = false
-    cachedGet('/exercises', { params: { best_for: exerciseGoal }, staleTime: STALE.catalog })
+    const params = exerciseFilter === 'all' ? {} : { best_for: exerciseFilter }
+    cachedGet('/exercises', { params, staleTime: STALE.catalog })
       .then((data) => {
         if (cancelled) return
         if (!Array.isArray(data?.exercises)) {
-          setExerciseCatalog({ goal: exerciseGoal, exercises: [], error: 'The exercise list could not be loaded.' })
+          setExerciseCatalog({ goal: exerciseFilter, exercises: [], error: 'The exercise list could not be loaded.' })
           return
         }
         setExerciseCatalog({
-          goal: exerciseGoal,
+          goal: exerciseFilter,
           exercises: data.exercises
             .filter(({ exercise_id, name }) => Number.isInteger(Number(exercise_id)) && typeof name === 'string')
             .map(enrichExercise),
@@ -154,10 +156,10 @@ export default function Workouts() {
         })
       })
       .catch((error) => {
-        if (!cancelled) setExerciseCatalog({ goal: exerciseGoal, exercises: [], error: errorsFrom(error).form })
+        if (!cancelled) setExerciseCatalog({ goal: exerciseFilter, exercises: [], error: errorsFrom(error).form })
       })
     return () => { cancelled = true }
-  }, [exercisePlanId, exerciseGoal])
+  }, [exercisePlanId, exerciseFilter])
 
   const shown = allPlans.filter((p) =>
     (statusFilter === 'all' || (statusFilter === 'active') === isActive(p)) && (goalFilter === 'all' || p.goal === goalFilter))
@@ -238,6 +240,26 @@ export default function Workouts() {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
   }
+  const saveChatSuggestion = async ({ question, suggestion }) => {
+    try {
+      const { data } = await api.post('/ai/suggestions/workout/save', {
+        question,
+        suggestion,
+      })
+      const saved = normalizeWorkout(data.workout)
+      cachePut(data.workout)
+      setPlans((current) => [saved, ...current.filter((item) => item.id !== saved.id)])
+      setPlanEquipment(saved.id, EQUIPMENT_IDS)
+      setOpenId(saved.id)
+      setNewId(saved.id)
+      setStatusFilter('all')
+      setGoalFilter('all')
+      notify('Suggested workout saved')
+      return 'Saved to your workout plans.'
+    } catch (error) {
+      throw new Error(error.response?.data?.message || error.message || 'This workout could not be saved.', { cause: error })
+    }
+  }
   const persistPlan = async (plan) => {
     try {
       const { data } = await api.put(`/workouts/${plan.id}`, workoutBody(plan))
@@ -284,8 +306,8 @@ export default function Workouts() {
   }
   const saveExercise = async (ex) => {
     const { planId, day } = exModal
-    if (exerciseCatalog.goal !== exerciseGoal) {
-      throw new Error('Wait for exercise suggestions to load for this workout goal.')
+    if (exerciseCatalog.goal !== exerciseFilter) {
+      throw new Error('Wait for exercise suggestions to load.')
     }
     const matchedExercise = exerciseCatalog.exercises.find(
       ({ name }) => name.trim().toLowerCase() === ex.name.trim().toLowerCase()
@@ -446,8 +468,8 @@ export default function Workouts() {
                 onEditPlan={() => setPlanModal({ planId: p.id })}
                 onDuplicate={() => duplicatePlan(p)}
                 onDeletePlan={() => setDeleting(p)}
-                onOpenExercise={(day, exercise, edit) => setExModal({ planId: p.id, day, exercise, edit })}
-                onAddExercise={(day) => setExModal({ planId: p.id, day, exercise: null })} />
+                onOpenExercise={(day, exercise, edit) => setExModal({ planId: p.id, day, exercise, edit, bestFor: p.goal || 'all' })}
+                onAddExercise={(day) => setExModal({ planId: p.id, day, exercise: null, bestFor: p.goal || 'all' })} />
             ))}
           </div>
         </div>
@@ -461,13 +483,12 @@ export default function Workouts() {
       {aiPlanOpen && <AiPlanModal onGenerate={saveAiPlan} onClose={() => setAiPlanOpen(false)} />}
       {exModal && exPlan && (
         <ExerciseModal key={exModal.exercise?.id ?? 'new'} exercise={exModal.exercise} startEditing={exModal.edit}
-          exerciseCatalog={exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.exercises : []}
-          exerciseGoal={exerciseGoal}
+          exerciseCatalog={exerciseCatalog.goal === exerciseFilter ? exerciseCatalog.exercises : []}
+          bestForFilter={exerciseFilter}
+          onBestForChange={(bestFor) => setExModal((current) => ({ ...current, bestFor }))}
           equipment={exPlan.equipment}
-          exerciseNamesLoading={Boolean(exerciseGoal && exerciseCatalog.goal !== exerciseGoal)}
-          exerciseNamesError={!exerciseGoal
-            ? 'This workout plan has no goal selected. Edit the plan to see matching exercises.'
-            : exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.error : ''}
+          exerciseNamesLoading={exerciseCatalog.goal !== exerciseFilter}
+          exerciseNamesError={exerciseCatalog.goal === exerciseFilter ? exerciseCatalog.error : ''}
           actionError={actionError}
           onSave={saveExercise} onDelete={deleteExercise} onClose={() => setExModal(null)} />
       )}
@@ -492,6 +513,8 @@ export default function Workouts() {
         suggestions={AI_SUGGESTIONS}
         context={{
           page: 'Workout plans',
+          category: 'workout',
+          persistConversations: true,
           data: {
             loading: plansLoading,
             plans: allPlans.map((plan) => ({
@@ -508,6 +531,7 @@ export default function Workouts() {
             })),
           },
         }}
+        onSaveRecommendation={saveChatSuggestion}
         wide={aiWide}
         onToggleWide={() => setAiWide((w) => !w)}
       />

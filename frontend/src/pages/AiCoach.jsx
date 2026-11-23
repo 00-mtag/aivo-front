@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Dumbbell, Flame, Plus, Search, Send, Sparkles, Trash2, UtensilsCrossed, Zap } from 'lucide-react'
+import { BookmarkPlus, Dumbbell, Flame, Plus, Search, Send, Sparkles, Trash2, UtensilsCrossed, Zap } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
 import useAivoChat from '../lib/useAivoChat'
+import WorkoutChatSuggestion, { parseWorkoutSuggestion } from '../components/workouts/WorkoutChatSuggestion'
+import { parseNutritionSuggestion } from '../lib/nutritionSuggestion'
+import { api } from '../lib/api'
+import { toYmd } from '../lib/nutrition'
 import logo from '../assets/logo.png'
 
 const QUICK = [
@@ -24,6 +28,7 @@ const Avatar = ({ size = 'h-10 w-10' }) => (
 export default function AiCoach() {
   const [category, setCategory] = useState('general')
   const activeTab = TABS.find((tab) => tab.id === category) ?? TABS[2]
+  const todayYmd = toYmd(new Date())
   const {
     messages,
     busy,
@@ -37,9 +42,18 @@ export default function AiCoach() {
     deletingConversationId,
     selectConversation,
     deleteConversation,
-  } = useAivoChat({ page: activeTab.page, category, persistConversations: true })
+  } = useAivoChat({
+    page: activeTab.page,
+    category,
+    persistConversations: true,
+    ...(category === 'nutrition' ? { data: { today: todayYmd } } : {}),
+  })
   const [text, setText] = useState('')
   const [search, setSearch] = useState('')
+  const [savedReplies, setSavedReplies] = useState(() => new Set())
+  const [savingSuggestion, setSavingSuggestion] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState('')
+  const [saveFeedbackError, setSaveFeedbackError] = useState(false)
   const endRef = useRef(null)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, busy, error])
@@ -48,6 +62,65 @@ export default function AiCoach() {
     if (!value.trim() || busy || historyLoading) return
     send(value)
     setText('')
+  }
+
+  const saveWorkoutSuggestion = async (question, suggestion, index) => {
+    if (savingSuggestion || savedReplies.has(index)) return
+    setSavingSuggestion(true)
+    setSaveFeedback('Saving the suggested workout...')
+    setSaveFeedbackError(false)
+    try {
+      await api.post('/ai/suggestions/workout/save', { question, suggestion })
+      setSavedReplies((current) => new Set(current).add(index))
+      setSaveFeedback('Saved to your workout plans.')
+    } catch (requestError) {
+      setSaveFeedback(requestError.response?.data?.message || 'This suggested workout could not be saved.')
+      setSaveFeedbackError(true)
+    } finally {
+      setSavingSuggestion(false)
+    }
+  }
+  const saveNutritionSuggestion = async (question, suggestion, index) => {
+    const plan = parseNutritionSuggestion(suggestion)
+    if (!plan || savingSuggestion || savedReplies.has(index)) return
+    setSavingSuggestion(true)
+    setSaveFeedback('Saving the suggested meal plan...')
+    setSaveFeedbackError(false)
+    try {
+      if (plan.type === 'week') {
+        const payload = {
+          question,
+          suggestion,
+          start_date: plan.dates[0],
+          end_date: plan.dates[plan.dates.length - 1],
+          replace_existing: false,
+        }
+        let response
+        try {
+          response = await api.post('/ai/suggestions/nutrition/save-week', payload)
+        } catch (requestError) {
+          if (requestError.response?.status !== 409) throw requestError
+          if (!window.confirm('Meals already exist in these dates. Replace them with this weekly plan?')) {
+            throw new Error('The weekly plan was not saved; existing meals were left unchanged.', { cause: requestError })
+          }
+          response = await api.post('/ai/suggestions/nutrition/save-week', { ...payload, replace_existing: true })
+        }
+        setSaveFeedback(`Saved ${response.data.meals.length} meals to your meal plan.`)
+      } else {
+        const { data } = await api.post('/ai/suggestions/nutrition/save', {
+          question,
+          suggestion,
+          meal_date: toYmd(new Date()),
+        })
+        setSaveFeedback(`${data.meal.meal_type} was saved to your meal plan for ${data.meal.meal_date}.`)
+      }
+      setSavedReplies((current) => new Set(current).add(index))
+    } catch (requestError) {
+      setSaveFeedback(requestError.response?.data?.message || requestError.message || 'This meal plan could not be saved.')
+      setSaveFeedbackError(true)
+    } finally {
+      setSavingSuggestion(false)
+    }
   }
   const filteredConversations = conversations.filter((conversation) =>
     (conversation.title || 'New chat').toLowerCase().includes(search.trim().toLowerCase()),
@@ -139,7 +212,39 @@ export default function AiCoach() {
                 {messages.map((item, index) => item.role === 'assistant' ? (
                   <div key={index} className="flex items-start gap-3">
                     <Avatar />
-                    <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm leading-relaxed">{item.content}</p>
+                    <div className="min-w-0 max-w-[85%]">
+                      {category === 'workout'
+                        ? <WorkoutChatSuggestion content={item.content} />
+                        : <p className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm leading-relaxed">{item.content}</p>}
+                      {category === 'workout'
+                        && parseWorkoutSuggestion(item.content)
+                        && messages[index - 1]?.role === 'user'
+                        && (
+                          <button
+                            type="button"
+                            disabled={savingSuggestion || savedReplies.has(index)}
+                            onClick={() => saveWorkoutSuggestion(messages[index - 1].content, item.content, index)}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-gold/40 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <BookmarkPlus size={14} />
+                            {savedReplies.has(index) ? 'Saved to my workout plans' : 'Save to my workout plans'}
+                          </button>
+                        )}
+                      {category === 'nutrition'
+                        && parseNutritionSuggestion(item.content)
+                        && messages[index - 1]?.role === 'user'
+                        && (
+                          <button
+                            type="button"
+                            disabled={savingSuggestion || savedReplies.has(index)}
+                            onClick={() => saveNutritionSuggestion(messages[index - 1].content, item.content, index)}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-gold/40 px-3 py-1.5 text-xs font-semibold text-gold transition hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <BookmarkPlus size={14} />
+                            {savedReplies.has(index) ? 'Saved to my meal plan' : 'Save to my meal plan'}
+                          </button>
+                        )}
+                    </div>
                   </div>
                 ) : (
                   <div key={index} className="flex justify-end">
@@ -148,6 +253,7 @@ export default function AiCoach() {
                 ))}
                 {busy && <div className="flex items-start gap-3"><Avatar /><p className="rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm text-mute">AIVO is thinking...</p></div>}
                 {error && <p role="alert" className="ml-[52px] text-sm text-red-300">{error}</p>}
+                {saveFeedback && <p role={saveFeedbackError ? 'alert' : 'status'} className={`ml-[52px] text-sm ${saveFeedbackError ? 'text-red-300' : 'text-emerald-300'}`}>{saveFeedback}</p>}
                 {messages.length === 0 && (
                   <div className="flex flex-wrap gap-2 pl-[52px]">
                     {QUICK.filter(({ icon }) => category === 'general'

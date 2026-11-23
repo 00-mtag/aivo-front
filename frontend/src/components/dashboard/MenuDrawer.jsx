@@ -476,7 +476,7 @@ function toForm(profile, name, rec) {
   const bd = String(pick(p, ['birthDate', 'birthday', 'birthdate', 'birth_date', 'dob']) || '')
   const age = parseIso(bd) ? ageFrom(bd) : num(p.age)
   return {
-    avatar: pick(p, ['avatar', 'photo', 'picture']) || '',
+    avatar: pick(p, ['avatar', 'photo', 'picture', 'profile_picture']) || '',
     name: String(pick(p, ['name']) || (name && name !== 'there' ? name : '')),
     phone: String(pick(p, ['phone', 'phoneNumber', 'mobile']) || ''),
     birthday: parseIso(bd) ? bd : '',

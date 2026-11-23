@@ -9,6 +9,7 @@ import { goldBtn } from '../components/workouts/Modal'
 import { api } from '../lib/api'
 import { getProfile, recommendedDailyCalories } from '../lib/profile'
 import { recommend } from '../lib/recommend'
+import { parseNutritionSuggestion } from '../lib/nutritionSuggestion'
 import useNutrition from '../lib/useNutrition'
 import { MEAL_TYPES, dayTotals, fromYmd, mealTotals, toYmd, weekDates } from '../lib/nutrition'
 
@@ -20,6 +21,7 @@ const MACRO_ROWS = [
   { key: 'carbohydrates', goalKey: 'daily_carbohydrates', label: 'Carbs', color: '#fb923c' },
   { key: 'fat', goalKey: 'daily_fat', label: 'Fat', color: '#f472b6' },
 ]
+const MEAL_MACRO_SHARES = { Breakfast: 0.25, Lunch: 0.35, Dinner: 0.30, Snack: 0.10 }
 
 const Bar = ({ pct, color }) => (
   <div className="h-2 rounded-full bg-white/10"><div className="h-2 rounded-full transition-all" style={{ width: `${Math.min(100, pct)}%`, background: color }} /></div>
@@ -100,6 +102,27 @@ export default function Nutrition() {
   const saveChatSuggestion = async ({ question, suggestion }) => {
     if (status === 'loading') throw new Error('Wait for your meal plan to finish loading before saving a suggestion.')
     try {
+      const parsed = parseNutritionSuggestion(suggestion)
+      if (!parsed) throw new Error('Ask AIVO for a single meal or a complete dated weekly plan before saving.')
+      if (parsed.type === 'week') {
+        await Promise.all(parsed.dates.map((date) => nu.flushDate(date)))
+        const existingMeals = meals.some((meal) => parsed.dates.includes(meal.meal_date))
+        const replaceExisting = existingMeals && window.confirm(
+          `Replace the meals already planned for ${fromYmd(parsed.dates[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${fromYmd(parsed.dates[parsed.dates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}?`,
+        )
+        if (existingMeals && !replaceExisting) throw new Error('The weekly plan was not saved; existing meals were left unchanged.')
+
+        const { data } = await api.post('/ai/suggestions/nutrition/save-week', {
+          question,
+          suggestion,
+          start_date: parsed.dates[0],
+          end_date: parsed.dates[parsed.dates.length - 1],
+          replace_existing: replaceExisting,
+        })
+        nu.replaceWeekMeals({ meals: data.meals, nutrition_goal: goal })
+        return `Saved ${data.meals.length} meals to your meal plan.`
+      }
+
       await nu.flushDate(selected)
       const { data } = await api.post('/ai/suggestions/nutrition/save', {
         question,
@@ -107,9 +130,11 @@ export default function Nutrition() {
         meal_date: selected,
       })
       nu.acceptSavedMeal(data.meal)
-      return `${data.meal.meal_type} was saved to your meal plan for ${selected}.`
+      return `${data.meal.meal_type} was saved to your meal plan for ${data.meal.meal_date}.`
     } catch (error) {
-      throw new Error(error.response?.data?.message || error.message || 'This suggestion could not be saved.', { cause: error })
+      const requestError = new Error(error.response?.data?.message || error.message || 'This suggestion could not be saved.', { cause: error })
+      requestError.closestSuggestion = error.response?.data?.closest_suggestion ?? null
+      throw requestError
     }
   }
 
@@ -269,6 +294,7 @@ export default function Nutrition() {
           category: 'nutrition',
           persistConversations: true,
           data: {
+            today: todayYmd,
             selectedDate: selected,
             dailyGoal: {
               calories: calGoal,
@@ -276,6 +302,15 @@ export default function Nutrition() {
               carbohydratesGrams: goal.daily_carbohydrates,
               fatGrams: goal.daily_fat,
             },
+            perMealMacroTargets: Object.fromEntries(Object.entries(MEAL_MACRO_SHARES).map(([type, share]) => [
+              type,
+              {
+                calories: Number(calGoal) * share,
+                proteinGrams: Number(goal.daily_protein) * share,
+                carbohydratesGrams: Number(goal.daily_carbohydrates) * share,
+                fatGrams: Number(goal.daily_fat) * share,
+              },
+            ])),
             loggedSoFar: {
               calories: totals.calories,
               proteinGrams: totals.protein,

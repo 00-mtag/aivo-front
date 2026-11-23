@@ -2,12 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { BookmarkPlus, Dumbbell, History, Maximize2, Minimize2, Send, Sparkles, UtensilsCrossed, X, Zap } from 'lucide-react'
 import logo from '../assets/logo.png'
 import useAivoChat from '../lib/useAivoChat'
+import { parseNutritionSuggestion } from '../lib/nutritionSuggestion'
+import WorkoutChatSuggestion, { parseWorkoutSuggestion } from './workouts/WorkoutChatSuggestion'
 
 const ICONS = [Dumbbell, UtensilsCrossed, Zap]
-const isWorkoutPlanRequest = (message) => (
-  /\b(?:plan|routine|schedule|program|programme)\b/i.test(message)
-  && /\b(?:create|make|build|generate|design|suggest|recommend|give|write|draft|need|want|looking for)\b/i.test(message)
-)
 const Avatar = () => (
   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-gold/50 bg-[#101010]"><img src={logo} alt="" className="h-6 w-auto" /></span>
 )
@@ -33,6 +31,7 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
   const [savedReplies, setSavedReplies] = useState(() => new Set())
   const [saveFeedback, setSaveFeedback] = useState('')
   const [saveFeedbackError, setSaveFeedbackError] = useState(false)
+  const [closestSuggestion, setClosestSuggestion] = useState(null)
   const endRef = useRef(null)
   const savedPlanLabel = page === 'Workout plans' ? 'workout plan' : page === 'Nutrition' ? 'meal plan' : 'plan'
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, busy, error])
@@ -41,6 +40,7 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
     const timeout = window.setTimeout(() => {
       setSaveFeedback('')
       setSaveFeedbackError(false)
+      setClosestSuggestion(null)
     }, 8000)
     return () => window.clearTimeout(timeout)
   }, [saveFeedback, savingSuggestion])
@@ -49,6 +49,7 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
     setSavingSuggestion(true)
     setSaveFeedback('Saving this suggestion to your plan...')
     setSaveFeedbackError(false)
+    setClosestSuggestion(null)
     try {
       const feedback = await onSaveRecommendation(reply)
       setSavedReplies((current) => new Set(current).add(index))
@@ -56,6 +57,7 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
     } catch (saveError) {
       setSaveFeedback(saveError.message || 'This suggestion could not be saved.')
       setSaveFeedbackError(true)
+      setClosestSuggestion(saveError.closestSuggestion ?? null)
     } finally {
       setSavingSuggestion(false)
     }
@@ -65,10 +67,12 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
     setSavedReplies(new Set())
     setSaveFeedback('')
     setSaveFeedbackError(false)
+    setClosestSuggestion(null)
   }
   const submit = (value) => {
     setSaveFeedback('')
     setSaveFeedbackError(false)
+    setClosestSuggestion(null)
     const saveCommand = /^\s*(please\s+)?(save|add)\s+(it|this|that)\s+to\s+(my|the)\s+(workout\s+|meal\s+)?plan[.! ]*$/i.test(value)
     if (saveCommand && onSaveRecommendation) {
       let assistantIndex = -1
@@ -82,12 +86,18 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
         setSaveFeedback('Ask AIVO for a suggestion before saving it to your plan.')
         setSaveFeedbackError(true)
       } else {
-        let questionIndex = assistantIndex - 1
-        while (questionIndex >= 0 && messages[questionIndex].role !== 'user') questionIndex--
-        void saveReply({
-          question: questionIndex >= 0 ? messages[questionIndex].content : '',
-          suggestion: messages[assistantIndex].content,
-        }, assistantIndex)
+        const suggestion = messages[assistantIndex].content
+        if (page === 'Nutrition' && !parseNutritionSuggestion(suggestion)) {
+          setSaveFeedback('Ask AIVO for a single meal or a complete dated weekly plan before saving.')
+          setSaveFeedbackError(true)
+        } else {
+          let questionIndex = assistantIndex - 1
+          while (questionIndex >= 0 && messages[questionIndex].role !== 'user') questionIndex--
+          void saveReply({
+            question: questionIndex >= 0 ? messages[questionIndex].content : '',
+            suggestion,
+          }, assistantIndex)
+        }
       }
       setText('')
       return
@@ -128,6 +138,7 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
                 setSavedReplies(new Set())
                 setSaveFeedback('')
                 setSaveFeedbackError(false)
+                setClosestSuggestion(null)
                 setHistoryOpen(false)
               }}
               disabled={busy || historyLoading}
@@ -151,10 +162,13 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
           <div key={i} className="flex items-start gap-3">
             <Avatar />
             <div className="min-w-0">
-              <p className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm">{m.content}</p>
+              {page === 'Workout plans'
+                ? <WorkoutChatSuggestion content={m.content} />
+                : <p className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm">{m.content}</p>}
               {onSaveRecommendation
                 && messages[i - 1]?.role === 'user'
-                && (page !== 'Workout plans' || isWorkoutPlanRequest(messages[i - 1].content))
+                && (page !== 'Workout plans' || parseWorkoutSuggestion(m.content))
+                && (page !== 'Nutrition' || parseNutritionSuggestion(m.content))
                 && (
                 <button type="button" disabled={savingSuggestion || savedReplies.has(i)} onClick={() => saveReply({
                   question: messages[i - 1].content,
@@ -171,6 +185,22 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
         {busy && <div className="flex items-start gap-3"><Avatar /><p className="rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm text-mute">AIVO is thinking...</p></div>}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
         {saveFeedback && <p role={savingSuggestion || !saveFeedbackError ? 'status' : 'alert'} className={`text-sm ${savingSuggestion || !saveFeedbackError ? 'text-emerald-300' : 'text-red-300'}`}>{saveFeedback}</p>}
+        {closestSuggestion?.days?.map((day) => (
+          <section key={day.date} className="ml-[52px] space-y-3 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3 text-xs">
+            <h4 className="font-semibold text-amber-200">Closest option for {day.date} — not saved</h4>
+            {day.meals.map((meal) => (
+              <div key={meal.meal_type} className="space-y-1">
+                <p className="font-semibold text-ink">{meal.meal_type}</p>
+                <ul className="list-inside list-disc text-mute">
+                  {meal.items.map((item) => <li key={item.name}>{item.quantity} serving{item.quantity === 1 ? '' : 's'} {item.name}</li>)}
+                </ul>
+                <p className="text-mute">
+                  {Math.round(meal.totals.calories)} kcal · P {meal.totals.protein.toFixed(1)}g · C {meal.totals.carbohydrates.toFixed(1)}g · F {meal.totals.fat.toFixed(1)}g
+                </p>
+              </div>
+            ))}
+          </section>
+        ))}
         {messages.length === 0 && (
           <div className="flex flex-col items-start gap-2 pl-[52px]">
             {suggestions.map((s, i) => {
