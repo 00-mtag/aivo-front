@@ -51,7 +51,7 @@ export default function WeekStrip({ plans, done = [], today, selected, onSelect,
               <li key={p.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold">{p.name}</p>
-                  <p className="truncate text-xs text-mute">{p.schedule[selected].length} exercises · about {p.minutes} min · {placeLabel(p.equipment)}</p>
+                  <p className="truncate text-xs text-mute">{p.schedule[selected].length} exercises · about {p.minutes} min · {placeLabel(p)}</p>
                 </div>
                 {done[DAYS.indexOf(selected)] && <span className="rounded-full bg-green-500/15 px-2 py-1 text-[11px] font-semibold text-green-400">Done</span>}
                 <button type="button" onClick={() => onStart(p.id, selected)} className={`${goldBtn} flex shrink-0 items-center gap-1.5 !px-4 !py-2 text-xs`}><Play size={14} /> Start</button>

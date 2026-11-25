@@ -114,7 +114,7 @@ export default function PlanCard({ plan, open, isNew, onStart, onCalendar, onTog
             </span>
             <span className="block truncate text-xs text-mute">{planDescription(plan)}</span>
             <span className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-ink/80">
-              {[plan.level, `${plan.minutes} min`, placeLabel(plan.equipment), plural(total)].map((t) => <span key={t} className="rounded-md bg-white/8 px-1.5 py-0.5" style={{ background: 'rgba(255,255,255,.07)' }}>{t}</span>)}
+              {[plan.level, `${plan.minutes} min`, placeLabel(plan), plural(total)].map((t) => <span key={t} className="rounded-md bg-white/8 px-1.5 py-0.5" style={{ background: 'rgba(255,255,255,.07)' }}>{t}</span>)}
             </span>
           </span>
           <ChevronDown size={20} className={`shrink-0 text-gold transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />

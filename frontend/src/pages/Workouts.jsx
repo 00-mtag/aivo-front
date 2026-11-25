@@ -15,7 +15,7 @@ import { ConfirmModal, ghostBtn, goldBtn } from '../components/workouts/Modal'
 import { Chip } from '../components/workouts/controls'
 import {
   DAYS, EQUIPMENT_IDS, GOALS, enrichExercise, exerciseCount, exerciseFits, isActive, loadEquipment, newPlan, normalizeWorkout,
-  saveEquipment, savePlans, uid, workoutBody,
+  readPlanGear, saveEquipment, savePlans, uid, workoutBody,
 } from '../lib/workouts'
 import { api, errorsFrom } from '../lib/api'
 import { userKey } from '../lib/profile'
@@ -136,10 +136,10 @@ export default function Workouts() {
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  // Every plan carries the equipment it was made for (older plans default to "everything").
-  const allPlans = useMemo(() => plans.map((p) => ({ ...p, equipment: eqMap[p.id] ?? EQUIPMENT_IDS })), [plans, eqMap])
-  const setPlanEquipment = (id, list) => setEqMap((current) => {
-    const next = { ...current, [id]: list }
+  // Every plan carries where it is trained and the equipment it uses (older plans default to "everything").
+  const allPlans = useMemo(() => plans.map((p) => ({ ...p, ...readPlanGear(eqMap[p.id]) })), [plans, eqMap])
+  const setPlanEquipment = (id, { place, equipment }) => setEqMap((current) => {
+    const next = { ...current, [id]: { place, equipment } }
     saveEquipment(next)
     return next
   })
@@ -185,7 +185,7 @@ export default function Workouts() {
   const filtering = statusFilter !== 'all' || goalFilter !== 'all'
 
   const savePlan = async (f) => {
-    const { equipment, ...fields } = f
+    const { equipment, place, ...fields } = f
     try {
       if (planModal.planId) {
         const plan = plans.find((item) => item.id === planModal.planId)
@@ -193,14 +193,14 @@ export default function Workouts() {
         const saved = mergeCustom(normalizeWorkout(data.workout))
         cachePut(data.workout)
         setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
-        setPlanEquipment(saved.id, equipment)
+        setPlanEquipment(saved.id, { place, equipment })
         notify('Plan updated')
       } else {
         const { data } = await api.post('/workouts', workoutBody(newPlan(fields)))
         const saved = normalizeWorkout(data.workout)
         cachePut(data.workout)
         setPlans((current) => [saved, ...current])
-        setPlanEquipment(saved.id, equipment)
+        setPlanEquipment(saved.id, { place, equipment })
         setOpenId(saved.id)
         setNewId(saved.id)
         setSelectedDay(todayName())
@@ -214,7 +214,7 @@ export default function Workouts() {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
   }
-  const saveAiPlan = async (generated, { equipment = EQUIPMENT_IDS } = {}) => {
+  const saveAiPlan = async (generated, { equipment = EQUIPMENT_IDS, place } = {}) => {
     // Keep only exercises that fit the equipment the user picked (unless that would leave nothing).
     const fitting = generated.exercises.filter((exercise) => exerciseFits(enrichExercise(exercise), equipment))
     const exercises = fitting.length ? fitting : generated.exercises
@@ -247,7 +247,7 @@ export default function Workouts() {
       const saved = normalizeWorkout(data.workout)
       cachePut(data.workout)
       setPlans((current) => [saved, ...current])
-      setPlanEquipment(saved.id, equipment)
+      setPlanEquipment(saved.id, { place, equipment })
       setOpenId(saved.id)
       setNewId(saved.id)
       setStatusFilter('all')
@@ -291,7 +291,7 @@ export default function Workouts() {
       cloneCustomForPlan(p.id, created.id)
       const saved = mergeCustom(created)
       setPlans((current) => [saved, ...current])
-      setPlanEquipment(saved.id, p.equipment)
+      setPlanEquipment(saved.id, { place: p.place, equipment: p.equipment })
       setOpenId(saved.id)
       setNewId(saved.id)
       setActionError('')
@@ -484,7 +484,7 @@ export default function Workouts() {
       </main>
 
       {planModal && (planModal.planId ? activePlan : true) && (
-        <PlanModal plan={activePlan || null} equipment={activePlan?.equipment} onSave={savePlan}
+        <PlanModal plan={activePlan || null} equipment={activePlan?.equipment} place={activePlan?.place} onSave={savePlan}
           onAiDecide={() => { setPlanModal(null); setAiPlanOpen(true) }}
           onClose={() => setPlanModal(null)} />
       )}

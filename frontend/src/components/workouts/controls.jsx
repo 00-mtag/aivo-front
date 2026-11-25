@@ -1,5 +1,5 @@
 import { Building2, Check, Dumbbell, HeartPulse, Home, Minus, Plus, Scale, TrendingDown } from 'lucide-react'
-import { EQUIPMENT, TRAIN_PLACES, placeOf } from '../../lib/workouts'
+import { EQUIPMENT, TRAIN_PLACES } from '../../lib/workouts'
 
 export const GOAL_META = {
   'Lose weight': { icon: TrendingDown, desc: 'Burn fat and calories' },
@@ -7,7 +7,7 @@ export const GOAL_META = {
   'Improve endurance': { icon: HeartPulse, desc: 'Last longer, breathe easier' },
   'Maintain fitness': { icon: Scale, desc: 'Stay active and steady' },
 }
-const PLACE_ICON = { home: Home, homeWeights: Dumbbell, gym: Building2 }
+const PLACE_ICON = { home: Home, gym: Building2 }
 
 // A round "pill" you tap to turn on or off.
 export function Chip({ active, onClick, children, className = '' }) {
@@ -55,24 +55,30 @@ export function Stepper({ value, onChange, min = 1, max = 20, step = 1, format =
   )
 }
 
-// Where do you train? Three cards, plus chips to fine-tune the equipment.
-export function EquipmentPicker({ value, onChange }) {
-  const place = value.length ? placeOf(value) : null
+// Where do you train? Pick a place, then tap any mix of equipment. Changing the equipment never un-picks the place.
+export function EquipmentPicker({ place, equipment, onChange }) {
+  const pickPlace = (id) => {
+    if (id === place) return
+    onChange({ place: id, equipment: TRAIN_PLACES.find((p) => p.id === id).equipment })   // a sensible start for that place
+  }
   const toggle = (id) => {
-    const next = value.includes(id) ? value.filter((x) => x !== id) : [...value, id]
-    onChange(next.length ? next : ['bodyweight'])
+    const next = equipment.includes(id) ? equipment.filter((x) => x !== id) : [...equipment, id]
+    onChange({ place, equipment: next.length ? next : ['bodyweight'] })
   }
   return (
     <div>
-      <div role="radiogroup" aria-label="Where do you train" className="grid gap-2">
-        {TRAIN_PLACES.map((p) => (
-          <Tile key={p.id} compact icon={PLACE_ICON[p.id]} title={p.title} desc={p.desc} selected={place === p.id} onClick={() => onChange(p.equipment)} />
-        ))}
+      <div role="radiogroup" aria-label="Where do you train" className="grid gap-2 sm:grid-cols-2">
+        {TRAIN_PLACES.map((p) => <Tile key={p.id} compact icon={PLACE_ICON[p.id]} title={p.title} desc={p.desc} selected={place === p.id} onClick={() => pickPlace(p.id)} />)}
       </div>
-      <p className="mb-2 mt-3 text-[11px] text-mute">{!place ? 'Pick one above, or tap the equipment you have:' : place === 'custom' ? 'Custom equipment. Tap to add or remove:' : 'Fine-tune what you have:'}</p>
-      <div className="flex flex-wrap gap-2">
-        {EQUIPMENT.map((e) => <Chip key={e.id} active={value.includes(e.id)} onClick={() => toggle(e.id)} className="!min-h-[2.25rem] !px-3 !text-xs">{e.label}</Chip>)}
-      </div>
+      {place && (
+        <>
+          <p className="mb-1 mt-4 text-xs font-semibold">What equipment can you use?</p>
+          <p className="mb-2 text-[11px] text-mute">Tap all that apply. You can mix, for example bodyweight and dumbbells together.</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Equipment">
+            {EQUIPMENT.map((e) => <Chip key={e.id} active={equipment.includes(e.id)} onClick={() => toggle(e.id)} className="!min-h-[2.25rem] !px-3 !text-xs">{e.label}</Chip>)}
+          </div>
+        </>
+      )}
     </div>
   )
 }

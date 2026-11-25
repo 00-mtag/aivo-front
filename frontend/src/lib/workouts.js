@@ -113,13 +113,23 @@ export const EQUIPMENT = [
 ]
 export const EQUIPMENT_IDS = EQUIPMENT.map((e) => e.id)
 export const TRAIN_PLACES = [
-  { id: 'home', title: 'At home', desc: 'No equipment needed', equipment: ['bodyweight'] },
-  { id: 'homeWeights', title: 'Home with weights', desc: 'Dumbbells, kettlebell or bands', equipment: ['bodyweight', 'dumbbell', 'kettlebell', 'band'] },
-  { id: 'gym', title: 'At the gym', desc: 'Machines, barbells and cables', equipment: EQUIPMENT_IDS },
+  { id: 'home', title: 'At home', desc: 'Then tap the equipment you have', equipment: ['bodyweight'] },
+  { id: 'gym', title: 'At the gym', desc: 'Machines, barbells, cables and more', equipment: EQUIPMENT_IDS },
 ]
-const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x))
-export const placeOf = (list) => TRAIN_PLACES.find((p) => sameSet(p.equipment, list ?? []))?.id ?? 'custom'
-export const placeLabel = (list) => TRAIN_PLACES.find((p) => p.id === placeOf(list))?.title ?? 'Custom equipment'
+const GYM_GEAR = ['barbell', 'machine', 'cable']
+// Older saved plans only kept a list of equipment. This works out the place from it.
+export const placeOf = (list) => ((list ?? []).some((t) => GYM_GEAR.includes(t)) ? 'gym' : 'home')
+// Works with a plan (uses the saved place) or with just a list of equipment.
+export const placeLabel = (planOrList) => {
+  const place = Array.isArray(planOrList) ? placeOf(planOrList) : planOrList?.place ?? placeOf(planOrList?.equipment)
+  return TRAIN_PLACES.find((p) => p.id === place)?.title ?? 'At the gym'
+}
+// What is saved for each plan: { place, equipment }. (Older versions saved only the equipment list.)
+export const readPlanGear = (saved) => {
+  if (Array.isArray(saved) && saved.length) return { place: placeOf(saved), equipment: saved }
+  if (saved?.equipment?.length) return { place: saved.place ?? placeOf(saved.equipment), equipment: saved.equipment }
+  return { place: undefined, equipment: EQUIPMENT_IDS }
+}
 export const equipmentLabel = (id) => EQUIPMENT.find((e) => e.id === id)?.label ?? id
 
 // The catalog may or may not say what equipment an exercise needs. If it does we use it, otherwise we read it from the name.
