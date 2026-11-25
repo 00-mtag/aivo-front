@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { CalendarCheck, ChevronLeft, ChevronRight, Dumbbell, Flame, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
 import Sidebar from '../components/dashboard/Sidebar'
+import ErrorBoundary from '../components/progress/ErrorBoundary'
 import useProgress from '../lib/useProgress'
 import { StatTile, fmt } from '../components/progress/ui'
 import WeekCard from '../components/progress/WeekCard'
@@ -11,20 +12,23 @@ import NutritionCard from '../components/progress/NutritionCard'
 import { CaloriesChart, WeightCard } from '../components/progress/Charts'
 import { Badges, Insights } from '../components/progress/Highlights'
 
-export default function Progress() {
+function ProgressBody() {
   const root = useLocation().pathname.startsWith('/preview') ? '/preview' : '/app'
   const [offset, setOffset] = useState(0)
   const [detail, setDetail] = useState(null) // null | 'workouts' | 'food' | 'water'
-  const p = useProgress(offset, root === '/preview')
+  const hook = useProgress(offset) ?? {}
 
-  // 'loading' | 'error' | 'ready'. Uses p.status if the hook provides it, otherwise p.loading / p.error.
-  const status = p.status ?? (p.loading ? 'loading' : p.error ? 'error' : 'ready')
+  // Works whether the hook returns the data directly, or wraps it as { progress, loading, error }.
+  const p = hook.progress ?? hook
+  const reload = hook.reload ?? hook.refetch
+  const shapeOk = Array.isArray(p.days) && p.totals && p.targets && p.weight
+  // 'loading' | 'error' | 'ready'
+  let status = hook.status ?? (hook.loading ? 'loading' : hook.error ? 'error' : 'ready')
+  if (status === 'ready' && !shapeOk) status = 'error'
   const WeightIcon = p.weight?.change > 0 ? TrendingUp : TrendingDown
 
   return (
-    <div className="min-h-screen bg-[#0d0d0d] text-white">
-      <Sidebar />
-      <main className="min-h-screen bg-[#161616] px-5 pb-28 pt-8 sm:px-8 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-12">
+    <>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold sm:text-3xl">Your Progress</h1>
@@ -43,13 +47,19 @@ export default function Progress() {
         </p>
       ) : status === 'error' ? (
         <div role="alert" className="mt-10 text-sm">
-          <p className="text-mute">We could not load your progress. {p.errorMessage}</p>
-          {typeof p.reload === 'function' && (
-            <button type="button" onClick={p.reload} className="mt-3 rounded-full border border-gold/60 px-4 py-2 text-xs font-semibold text-gold transition hover:bg-gold/10">Try again</button>
+          <p className="text-mute">We could not load your progress.</p>
+          {typeof reload === 'function' && (
+            <button type="button" onClick={reload} className="mt-3 rounded-full border border-gold/60 px-4 py-2 text-xs font-semibold text-gold transition hover:bg-gold/10">Try again</button>
           )}
         </div>
       ) : (
         <>
+          {p.warnings?.length > 0 && (
+            <div role="status" className="mt-5 rounded-2xl border border-amber-400/40 bg-amber-400/5 p-4 text-sm text-ink/90 sm:flex sm:items-center sm:justify-between">
+              <p>Some data could not be loaded ({p.warnings.join(', ')}). The rest is shown below.</p>
+              {typeof reload === 'function' && <button type="button" onClick={reload} className="mt-3 rounded-full border border-gold/60 px-4 py-2 text-xs font-semibold text-gold transition hover:bg-gold/10 sm:mt-0">Try again</button>}
+            </div>
+          )}
           {!p.hasData && (
             <div className="mt-5 rounded-2xl border border-gold/40 bg-gold/5 p-4 text-sm text-white/80 sm:flex sm:items-center sm:justify-between">
               <p>Nothing logged yet. Complete a workout or log a meal and your numbers appear here.</p>
@@ -64,11 +74,10 @@ export default function Progress() {
             <div className="lg:col-span-5"><WeekCard progress={p} onOpen={() => setDetail('workouts')} /></div>
             <Insights progress={p} />
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:col-span-12 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:col-span-12">
               <StatTile icon={CalendarCheck} label="Day streak" value={`${p.streak} day${p.streak === 1 ? '' : 's'}`} note="Workout or meal logged" />
               <StatTile icon={Dumbbell} label="Active time" value={`${p.totals.minutes} min`} note="This week" />
               <StatTile icon={Flame} label="Avg. calories" value={p.totals.foodDays ? `${fmt(p.totals.avgCalories)} kcal` : '--'} note={`Goal ${fmt(p.targets.calories)} kcal`} />
-              <StatTile icon={Flame} label="Calories burned" value={`${fmt(p.totals.caloriesBurned)} kcal`} note="This week" />
               <StatTile icon={WeightIcon} label="Weight change" value={`${p.weight.change > 0 ? '+' : ''}${p.weight.change} kg`} note="Since you started" />
             </div>
 
@@ -84,6 +93,18 @@ export default function Progress() {
       )}
 
       {detail && status === 'ready' && <WeekDetail progress={p} tab={detail} onTab={setDetail} onClose={() => setDetail(null)} root={root} />}
+    </>
+  )
+}
+
+export default function Progress() {
+  return (
+    <div className="min-h-screen bg-[#0d0d0d] text-white">
+      <Sidebar />
+      <main className="min-h-screen bg-[#161616] px-5 pb-28 pt-8 sm:px-8 lg:ml-20 lg:rounded-tl-[2.5rem] lg:pb-12">
+        <ErrorBoundary>
+          <ProgressBody />
+        </ErrorBoundary>
       </main>
     </div>
   )

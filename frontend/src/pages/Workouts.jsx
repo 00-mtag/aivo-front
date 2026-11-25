@@ -19,9 +19,8 @@ import {
 } from '../lib/workouts'
 import { api, errorsFrom } from '../lib/api'
 import { userKey } from '../lib/profile'
-import { logWorkout, syncWorkoutPlan } from '../lib/progress'
+import { PROGRESS_EVENT, logWorkout, readAll, syncWorkoutPlan, toKey } from '../lib/progress'
 import { STALE, cachedGet, patchCache, peek } from '../lib/cache'
-import useProgress from '../lib/useProgress'
 
 const AI_SUGGESTIONS = ['Suggest a workout for muscle gain', 'How many calories should I eat?', 'Create a cardio plan']
 const todayName = () => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()]
@@ -33,6 +32,19 @@ const cachePut = (raw) => patchCache('/workouts', (d) => {
   return { ...d, workouts: i >= 0 ? list.map((w, k) => (k === i ? raw : w)) : [raw, ...list] }
 })
 const cacheRemove = (id) => patchCache('/workouts', (d) => ({ ...d, workouts: (d?.workouts ?? []).filter((w) => Number(w.workout_id) !== Number(id)) }))
+
+// Which days this week already have a finished workout. Reads only what is saved on this device and in
+// the cache. It never calls the server, so opening Workouts no longer triggers the Progress requests.
+function doneThisWeek() {
+  const logged = new Set(readAll().workoutLog.map((w) => w.date))
+  for (const record of peek('/progress')?.data?.workout_records ?? []) logged.add(String(record.created_at ?? '').slice(0, 10))
+  const now = new Date()
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7))
+  return {
+    doneDays: DAYS.map((_, i) => logged.has(toKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)))),
+    everDone: logged.size > 0,
+  }
+}
 
 const flag = (name) => { try { return localStorage.getItem(userKey(name)) === '1' } catch { return false } }
 const setFlag = (name) => { try { localStorage.setItem(userKey(name), '1') } catch { /* storage blocked */ } }
@@ -66,10 +78,13 @@ export default function Workouts() {
   const [goalFilter, setGoalFilter] = useState('all')
   const toastTimer = useRef(null)
 
-  const hook = useProgress(0)
-  const prog = hook?.progress ?? hook
-  const doneDays = DAYS.map((_, i) => prog?.days?.[i]?.status === 'done')
-  const everDone = doneDays.some(Boolean) || Boolean(prog?.badges?.find((b) => b.id === 'first')?.earned)
+  const [, refreshDone] = useState(0)
+  useEffect(() => {
+    const again = () => refreshDone((n) => n + 1)
+    window.addEventListener(PROGRESS_EVENT, again)
+    return () => window.removeEventListener(PROGRESS_EVENT, again)
+  }, [])
+  const { doneDays, everDone } = doneThisWeek()
 
   const notify = (message) => {
     setToast(message)
@@ -132,34 +147,37 @@ export default function Workouts() {
   const exPlan = exModal && allPlans.find((p) => p.id === exModal.planId)
   const exerciseGoal = exPlan?.goal
   const exercisePlanId = exModal?.planId ?? null
-  const exerciseFilter = exModal?.bestFor ?? exerciseGoal ?? 'all'
   const sessionPlan = session && allPlans.find((p) => p.id === session.planId)
   const calPlan = calId && allPlans.find((p) => p.id === calId)
 
+  // Exercise list for the picker: the ones recommended for this plan's goal first, then the rest of the
+  // catalog, so a bodyweight chest exercise like a push-up can be found whatever the goal is.
   useEffect(() => {
-    if (exercisePlanId === null) return undefined
+    if (exercisePlanId === null || !exerciseGoal) return undefined
     let cancelled = false
-    const params = exerciseFilter === 'all' ? {} : { best_for: exerciseFilter }
-    cachedGet('/exercises', { params, staleTime: STALE.catalog })
-      .then((data) => {
+    const usable = (data) => (Array.isArray(data?.exercises)
+      ? data.exercises.filter(({ exercise_id, name }) => Number.isInteger(Number(exercise_id)) && typeof name === 'string')
+      : null)
+    Promise.all([
+      cachedGet('/exercises', { params: { best_for: exerciseGoal }, staleTime: STALE.catalog }).then(usable),
+      cachedGet('/exercises', { staleTime: STALE.catalog }).then(usable).catch(() => null),   // the full list is a bonus: ignore if it fails
+    ])
+      .then(([forGoal, everything]) => {
         if (cancelled) return
-        if (!Array.isArray(data?.exercises)) {
-          setExerciseCatalog({ goal: exerciseFilter, exercises: [], error: 'The exercise list could not be loaded.' })
+        if (!forGoal && !everything) {
+          setExerciseCatalog({ goal: exerciseGoal, exercises: [], error: 'The exercise list could not be loaded.' })
           return
         }
-        setExerciseCatalog({
-          goal: exerciseFilter,
-          exercises: data.exercises
-            .filter(({ exercise_id, name }) => Number.isInteger(Number(exercise_id)) && typeof name === 'string')
-            .map(enrichExercise),
-          error: '',
-        })
+        const best = (forGoal ?? []).map((e) => ({ ...enrichExercise(e), bestFor: true }))
+        const bestIds = new Set(best.map((e) => e.id))
+        const others = (everything ?? []).map(enrichExercise).filter((e) => !bestIds.has(e.id)).map((e) => ({ ...e, bestFor: false }))
+        setExerciseCatalog({ goal: exerciseGoal, exercises: [...best, ...others], error: '' })
       })
       .catch((error) => {
-        if (!cancelled) setExerciseCatalog({ goal: exerciseFilter, exercises: [], error: errorsFrom(error).form })
+        if (!cancelled) setExerciseCatalog({ goal: exerciseGoal, exercises: [], error: errorsFrom(error).form })
       })
     return () => { cancelled = true }
-  }, [exercisePlanId, exerciseFilter])
+  }, [exercisePlanId, exerciseGoal])
 
   const shown = allPlans.filter((p) =>
     (statusFilter === 'all' || (statusFilter === 'active') === isActive(p)) && (goalFilter === 'all' || p.goal === goalFilter))
@@ -240,26 +258,6 @@ export default function Workouts() {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
   }
-  const saveChatSuggestion = async ({ question, suggestion }) => {
-    try {
-      const { data } = await api.post('/ai/suggestions/workout/save', {
-        question,
-        suggestion,
-      })
-      const saved = normalizeWorkout(data.workout)
-      cachePut(data.workout)
-      setPlans((current) => [saved, ...current.filter((item) => item.id !== saved.id)])
-      setPlanEquipment(saved.id, EQUIPMENT_IDS)
-      setOpenId(saved.id)
-      setNewId(saved.id)
-      setStatusFilter('all')
-      setGoalFilter('all')
-      notify('Suggested workout saved')
-      return 'Saved to your workout plans.'
-    } catch (error) {
-      throw new Error(error.response?.data?.message || error.message || 'This workout could not be saved.', { cause: error })
-    }
-  }
   const persistPlan = async (plan) => {
     try {
       const { data } = await api.put(`/workouts/${plan.id}`, workoutBody(plan))
@@ -306,8 +304,8 @@ export default function Workouts() {
   }
   const saveExercise = async (ex) => {
     const { planId, day } = exModal
-    if (exerciseCatalog.goal !== exerciseFilter) {
-      throw new Error('Wait for exercise suggestions to load.')
+    if (exerciseCatalog.goal !== exerciseGoal) {
+      throw new Error('Wait for exercise suggestions to load for this workout goal.')
     }
     const matchedExercise = exerciseCatalog.exercises.find(
       ({ name }) => name.trim().toLowerCase() === ex.name.trim().toLowerCase()
@@ -315,7 +313,7 @@ export default function Workouts() {
     const keepsExistingExercise = ex.exerciseId
       && ex.name.trim().toLowerCase() === exModal.exercise?.name.trim().toLowerCase()
     const exerciseId = matchedExercise?.id ?? (keepsExistingExercise ? ex.exerciseId : null)
-    if (!exerciseId) throw new Error("Choose an exercise from this workout goal's suggestions.")
+    if (!exerciseId) throw new Error('Choose an exercise from the list.')
 
     const plan = plans.find((item) => item.id === planId)
     const list = plan.schedule[day] ?? []
@@ -468,8 +466,8 @@ export default function Workouts() {
                 onEditPlan={() => setPlanModal({ planId: p.id })}
                 onDuplicate={() => duplicatePlan(p)}
                 onDeletePlan={() => setDeleting(p)}
-                onOpenExercise={(day, exercise, edit) => setExModal({ planId: p.id, day, exercise, edit, bestFor: p.goal || 'all' })}
-                onAddExercise={(day) => setExModal({ planId: p.id, day, exercise: null, bestFor: p.goal || 'all' })} />
+                onOpenExercise={(day, exercise, edit) => setExModal({ planId: p.id, day, exercise, edit })}
+                onAddExercise={(day) => setExModal({ planId: p.id, day, exercise: null })} />
             ))}
           </div>
         </div>
@@ -483,12 +481,13 @@ export default function Workouts() {
       {aiPlanOpen && <AiPlanModal onGenerate={saveAiPlan} onClose={() => setAiPlanOpen(false)} />}
       {exModal && exPlan && (
         <ExerciseModal key={exModal.exercise?.id ?? 'new'} exercise={exModal.exercise} startEditing={exModal.edit}
-          exerciseCatalog={exerciseCatalog.goal === exerciseFilter ? exerciseCatalog.exercises : []}
-          bestForFilter={exerciseFilter}
-          onBestForChange={(bestFor) => setExModal((current) => ({ ...current, bestFor }))}
+          exerciseCatalog={exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.exercises : []}
+          exerciseGoal={exerciseGoal}
           equipment={exPlan.equipment}
-          exerciseNamesLoading={exerciseCatalog.goal !== exerciseFilter}
-          exerciseNamesError={exerciseCatalog.goal === exerciseFilter ? exerciseCatalog.error : ''}
+          exerciseNamesLoading={Boolean(exerciseGoal && exerciseCatalog.goal !== exerciseGoal)}
+          exerciseNamesError={!exerciseGoal
+            ? 'This workout plan has no goal selected. Edit the plan to see matching exercises.'
+            : exerciseCatalog.goal === exerciseGoal ? exerciseCatalog.error : ''}
           actionError={actionError}
           onSave={saveExercise} onDelete={deleteExercise} onClose={() => setExModal(null)} />
       )}
@@ -513,8 +512,6 @@ export default function Workouts() {
         suggestions={AI_SUGGESTIONS}
         context={{
           page: 'Workout plans',
-          category: 'workout',
-          persistConversations: true,
           data: {
             loading: plansLoading,
             plans: allPlans.map((plan) => ({
@@ -531,7 +528,6 @@ export default function Workouts() {
             })),
           },
         }}
-        onSaveRecommendation={saveChatSuggestion}
         wide={aiWide}
         onToggleWide={() => setAiWide((w) => !w)}
       />

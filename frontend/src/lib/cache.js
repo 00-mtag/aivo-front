@@ -48,10 +48,23 @@ const subscribe = (key, fn) => {
   return () => subs.get(key)?.delete(fn)
 }
 
+// At most a few requests at once, so a small server or database is never flooded.
+let maxParallel = 3
+let running = 0
+const waiting = []
+export const setMaxParallel = (n) => { maxParallel = Math.max(1, n) }
+const schedule = (job) => new Promise((resolve, reject) => {
+  const run = () => {
+    running += 1
+    job().then(resolve, reject).finally(() => { running -= 1; waiting.shift()?.() })
+  }
+  if (running < maxParallel) run(); else waiting.push(run)
+})
+
 // One network call per key at a time.
 function fetchFresh(url, params, key) {
   if (inflight.has(key)) return inflight.get(key)
-  const request = api.get(url, params ? { params } : undefined)
+  const request = schedule(() => api.get(url, params ? { params } : undefined))
     .then(({ data }) => { write(key, data); return data })
     .finally(() => inflight.delete(key))
   inflight.set(key, request)

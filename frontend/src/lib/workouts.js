@@ -153,23 +153,28 @@ const MUSCLE_RULES = [
   ['Full body', /thruster|\bclean\b|snatch|turkish|man ?maker|full[- ]body/i],
   ['Cardio', /\brun|jog|sprint|jump|burpee|climber|bike|cycl|rope|skipping|elliptical|treadmill|stair|high knees|skater|cardio|jacks?\b|rowing/i],
   ['Core', /plank|crunch|sit[- ]?up|twist|leg raise|\babs?\b|\bcore\b|dead bug|bird dog|v-up|hollow|flutter|bicycle/i],
-  ['Shoulders', /shoulder|lateral|overhead|military|arnold|front raise|rear delt|upright/i],
-  ['Chest', /chest|bench|push[- ]?up|pushup|\bfly\b|\bflye|pec\b|pec deck/i],
+  ['Shoulders', /shoulder|lateral|overhead|military|arnold|front raise|rear delt|upright|\bpike\b|handstand/i],
+  ['Chest', /chest|bench|push[- ]?ups?|press[- ]?ups?|\bfly\b|\bflye|pec\b|pec deck/i],
   ['Back', /\brow\b|pull[- ]?up|chin[- ]?up|pulldown|\blat\b|\bback\b|deadlift|superman|face pull|shrug/i],
   ['Legs', /squat|lunge|leg (curl|extension|press)|step[- ]?up|wall sit/i],
   ['Arms', /curl|tricep|bicep|\bdips?\b|skull|hammer|kickback|pushdown/i],
   ['Legs', /leg|calf|glute|hip|bridge|thrust|hamstring|quad/i],
 ]
-export function inferMuscle(name, raw) {
-  const exact = MUSCLES.find((m) => m.toLowerCase() === String(raw ?? '').trim().toLowerCase())
-  if (exact) return exact
-  for (const text of [raw, name]) {
-    if (!text) continue
-    const hit = MUSCLE_RULES.find(([, re]) => re.test(String(text)))
-    if (hit) return hit[0]
-  }
-  return 'Full body'
+const splitMuscles = (v) => (Array.isArray(v) ? v : String(v ?? '').split(/[,/&;]| and /i)).map((t) => String(t).trim()).filter(Boolean)
+const muscleFromText = (text) => {
+  const exact = MUSCLES.find((m) => m.toLowerCase() === text.toLowerCase())
+  return exact ?? MUSCLE_RULES.find(([, re]) => re.test(text))?.[0]
 }
+// Every muscle group an exercise trains: what the catalog says, plus what the name says.
+// A push-up is Chest, and also Shoulders and Arms if the catalog lists those.
+export function inferMuscles(name, raw) {
+  const out = []
+  const add = (m) => { if (m && !out.includes(m)) out.push(m) }
+  splitMuscles(raw).forEach((t) => add(muscleFromText(t)))
+  add(muscleFromText(String(name ?? '')))
+  return out.length ? out : ['Full body']
+}
+export const inferMuscle = (name, raw) => inferMuscles(name, raw)[0]
 
 // Exercises that are held or run for a length of time instead of counted in reps.
 const TIMED_RE = /plank|\bhold\b|wall sit|dead hang|\bhang\b|stretch|l-sit|jump(ing)? rope|skipping|jumping jacks?|mountain climbers?|high knees|\brunning|\bjog|sprint|cycling|treadmill|elliptical|rowing machine|stair ?(climber|master)|shadow ?box|battle rope|bear crawl/i
@@ -179,13 +184,18 @@ export const isTimedExercise = (raw) => raw?.weightORduration === 'duration' || 
 export function enrichExercise(raw) {
   const name = String(raw.name ?? '')
   const timed = isTimedExercise({ name, weightORduration: raw.weightORduration })
+  const muscles = Array.isArray(raw.muscles) && raw.muscles.length
+    ? raw.muscles
+    : inferMuscles(name, raw.muscle_group ?? raw.muscle ?? raw.target_muscle ?? raw.catalog_muscle_group)
   return {
     id: Number(raw.exercise_id ?? raw.id),
     name,
     timed,
     weightORduration: timed ? 'duration' : 'weight',
-    muscle: inferMuscle(name, raw.muscle_group ?? raw.muscle ?? raw.target_muscle ?? raw.catalog_muscle_group),
+    muscle: muscles[0],
+    muscles,
     equipment: inferEquipment(name, raw.equipment ?? raw.equipment_type ?? raw.equipments),
+    bestFor: raw.bestFor,
   }
 }
 export const exerciseFits = (ex, selected) => (ex.equipment ?? inferEquipment(ex.name)).every((t) => selected.includes(t))

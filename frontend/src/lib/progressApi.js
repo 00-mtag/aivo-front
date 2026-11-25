@@ -1,6 +1,6 @@
-import { api } from './api'
 import { dedupeMeals, normGoal, pickGoal } from './nutritionApi'
 import { DEFAULT_TARGETS, dayIndex, readAll } from './progress'
+import { cachedGet } from './cache'
 
 const number = (value) => {
   const parsed = Number(value)
@@ -54,30 +54,53 @@ function activeWorkoutPlans(workouts) {
   return [...plansByDay.values()].sort((a, b) => a.day - b.day)
 }
 
-export async function fetchProgressData() {
-  const profileRequest = api.get('/profile').catch((error) => {
-    if (error.response?.status === 404) return { data: { profile: null } }
-    throw error
-  })
-  const [progressResponse, workoutsResponse, mealsResponse, goalsResponse, profileResponse] = await Promise.all([
-    api.get('/progress'),
-    api.get('/workouts'),
-    api.get('/nutrition/meals'),
-    api.get('/nutrition/goals'),
-    profileRequest,
+// Everything goes through the cache (cache.js): data that is already saved is reused, identical
+// requests are shared, and only a few run at a time. Only /progress is essential. If one of the
+// others fails, the page still opens with what loaded and lists what is missing in `warnings`.
+export async function fetchProgressData({ force = false } = {}) {
+  const get = (url) => cachedGet(url, { force })
+
+  const [progressResult, workoutsResult, mealsResult, goalsResult] = await Promise.allSettled([
+    get('/progress'),
+    get('/workouts'),
+    get('/nutrition/meals'),
+    get('/nutrition/goals'),
   ])
-  const progress = progressResponse.data
-  const local = readAll()
-  const profile = profileResponse.data.profile
-  const goal = pickGoal((goalsResponse.data.nutrition_goals ?? []).map(normGoal))
-  const activePlans = activeWorkoutPlans(workoutsResponse.data.workouts ?? [])
-  const plannedDays = new Set(activePlans.map((plan) => plan.day))
-  const currentWeight = weightInKg(profile?.weight)
+  if (progressResult.status === 'rejected') throw progressResult.reason
+
+  const warnings = []
+  const valueOf = (result, label, fallback) => {
+    if (result.status === 'fulfilled') return result.value
+    warnings.push(label)
+    return fallback
+  }
+  const progress = progressResult.value
+  const workouts = valueOf(workoutsResult, 'workout plans', { workouts: [] })
+  const meals = valueOf(mealsResult, 'meals', { meals: [] })
+  const goals = valueOf(goalsResult, 'nutrition goals', { nutrition_goals: [] })
+
   const weightLog = (progress.progress_records ?? [])
     .filter((record) => record.weight !== null && record.weight !== undefined)
     .map((record) => ({ date: dateKey(record.record_date), kg: number(record.weight) }))
 
+  // The profile is only needed for a starting weight when there are no weight records yet.
+  let profile = null
+  if (!weightLog.length) {
+    try {
+      profile = (await get('/profile')).profile
+    } catch (error) {
+      if (error.response?.status !== 404) warnings.push('profile')
+    }
+  }
+
+  const local = readAll()
+  const goal = pickGoal((goals.nutrition_goals ?? []).map(normGoal))
+  const activePlans = activeWorkoutPlans(workouts.workouts ?? [])
+  const plannedDays = new Set(activePlans.map((plan) => plan.day))
+  const currentWeight = weightInKg(profile?.weight)
+
   return {
+    warnings,
     profile: {
       weightKg: weightLog.length ? null : currentWeight,
       targets: {
@@ -102,7 +125,7 @@ export async function fetchProgressData() {
       calories: number(record.calories_burned),
       exerciseName: record.exercise_name,
     })),
-    mealLog: mealEntries(mealsResponse.data.meals ?? [], progress.calorie_intake_records ?? []),
+    mealLog: mealEntries(meals.meals ?? [], progress.calorie_intake_records ?? []),
     waterLog: local.waterLog,
     weightLog,
   }

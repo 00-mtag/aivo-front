@@ -3,7 +3,7 @@ import { Dumbbell, Pencil, Search, Timer } from 'lucide-react'
 import Modal, { fieldClass, ghostBtn, goldBtn } from './Modal'
 import { Chip, Label, Stepper } from './controls'
 import {
-  DURATION_CHIPS, EQUIPMENT, EQUIPMENT_IDS, GOALS, MUSCLES, enrichExercise, equipmentLabel, exerciseFits, exerciseSeconds,
+  DURATION_CHIPS, EQUIPMENT, EQUIPMENT_IDS, MUSCLES, enrichExercise, equipmentLabel, exerciseFits, exerciseSeconds,
   exerciseTarget, fmtDuration, inferMuscle,
 } from '../../lib/workouts'
 
@@ -16,7 +16,7 @@ const Badge = ({ children, gold = false }) => (
 )
 
 export default function ExerciseModal({
-  exercise, startEditing, exerciseCatalog = [], bestForFilter = 'all', onBestForChange, exerciseNamesLoading = false, exerciseNamesError = '',
+  exercise, startEditing, exerciseCatalog = [], exerciseGoal, exerciseNamesLoading = false, exerciseNamesError = '',
   actionError = '', equipment, onSave, onDelete, onClose,
 }) {
   const isNew = !exercise
@@ -44,7 +44,11 @@ export default function ExerciseModal({
   const [muscleF, setMuscleF] = useState('All')
   const [typeF, setTypeF] = useState('all')
 
-  const catalog = useMemo(() => exerciseCatalog.map(enrichExercise), [exerciseCatalog])
+  // Recommended exercises (best for the plan's goal) first, then the rest of the catalog.
+  const catalog = useMemo(
+    () => exerciseCatalog.map(enrichExercise).sort((a, b) => (b.bestFor ? 1 : 0) - (a.bestFor ? 1 : 0)),
+    [exerciseCatalog],
+  )
   const set = (patch) => setF((s) => ({ ...s, ...patch }))
   const toggleEq = (id) => setEq((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))
 
@@ -119,7 +123,8 @@ export default function ExerciseModal({
     const loading = exerciseNamesLoading
     const needle = q.trim().toLowerCase()
     const matchQ = (e) => !needle || e.name.toLowerCase().includes(needle)
-    const okMuscle = (e, m) => m === 'All' || e.muscle === m
+    const okMuscle = (e, m) => m === 'All' || (e.muscles ?? [e.muscle]).includes(m)
+    const mixed = catalog.some((e) => e.bestFor) && catalog.some((e) => !e.bestFor)
     const okType = (e, t) => t === 'all' || (t === 'timed') === e.timed
     // Does an exercise pass the filters? Any one of them can be swapped to see "what if".
     const test = (e, o = {}) => matchQ(e) && exerciseFits(e, o.eq ?? eq) && okMuscle(e, o.m ?? muscleF) && okType(e, o.t ?? typeF)
@@ -169,9 +174,10 @@ export default function ExerciseModal({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold">{e.name}</span>
               <span className="mt-1 flex flex-wrap gap-1.5">
-                <Badge>{e.muscle}</Badge>
+                {(e.muscles ?? [e.muscle]).slice(0, 2).map((m) => <Badge key={m}>{m}</Badge>)}
                 {e.equipment.map((t) => <Badge key={t}>{equipmentLabel(t)}</Badge>)}
                 {e.timed && <Badge gold>Timed</Badge>}
+                {mixed && e.bestFor && <Badge gold>Recommended</Badge>}
                 {lacking.length > 0 && <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">Needs {lacking.map(equipmentLabel).join(', ')}</span>}
               </span>
             </span>
@@ -181,18 +187,8 @@ export default function ExerciseModal({
     }
 
     return (
-      <Modal title="Choose an exercise" subtitle={bestForFilter === 'all' ? 'Showing all exercises. Tap one to continue.' : `Best for ${bestForFilter}. Tap one to continue.`} onClose={onClose} wide>
+      <Modal title="Choose an exercise" subtitle={exerciseGoal ? (catalog.some((e) => e.bestFor) && catalog.some((e) => !e.bestFor) ? `Recommended for ${exerciseGoal} come first. Tap one to continue.` : `Best for ${exerciseGoal}. Tap one to continue.`) : 'Tap one to continue.'} onClose={onClose} wide>
         {errorBox}
-        <Label>Best for</Label>
-        <select
-          aria-label="Filter exercises by goal"
-          value={bestForFilter}
-          onChange={(event) => onBestForChange?.(event.target.value)}
-          className={fieldClass}
-        >
-          <option value="all" className="bg-card">Show all exercises</option>
-          {GOALS.map((goal) => <option key={goal} value={goal} className="bg-card">{goal}</option>)}
-        </select>
         <label className="relative block">
           <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-mute" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search (optional)" aria-label="Search exercises" className={`${fieldClass} !pl-10`} />
@@ -227,7 +223,7 @@ export default function ExerciseModal({
           {filtersOn && <button type="button" onClick={clear} className="font-semibold text-gold hover:underline">Clear filters</button>}
         </div>
         {exerciseNamesError && <p role="alert" className="mb-2 text-sm text-danger">{exerciseNamesError}</p>}
-        {!loading && !exerciseNamesError && catalog.length === 0 && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-mute">No exercises are available for this filter yet.</p>}
+        {!loading && !exerciseNamesError && catalog.length === 0 && <p className="rounded-xl border border-dashed border-white/15 p-5 text-center text-sm text-mute">No exercises are available for this goal yet.</p>}
 
         {!loading && catalog.length > 0 && exact.length === 0 && (
           <div className="mb-4 rounded-2xl border border-gold/30 bg-gold/5 p-4" role="status">

@@ -176,12 +176,8 @@ export function buildProgress(raw, weekOffset = 0) {
     return {
       key, label, date, shortDate: short(date), isToday, isFuture, plan,
       status: workouts.length ? 'done' : plan ? (isToday || isFuture ? 'todo' : 'missed') : 'rest',
-      workouts,       meals,
+      workouts, meals,
       minutes: sum(workouts, w => w.minutes),
-      caloriesBurned: sum(
-        (raw.calorieBurnLog || []).filter(w => w.date === key),
-        w => w.calories,
-      ),
       calories: sum(meals, m => m.calories),
       protein: sum(meals, m => m.protein),
       water: round1(sum(raw.waterLog.filter(w => w.date === key), w => w.liters)),
@@ -239,11 +235,11 @@ export function buildProgress(raw, weekOffset = 0) {
 
   return {
     targets, days, hasData, insights, badges, weight, streak, weekOffset,
+    warnings: raw.warnings ?? [],
     range: `${short(start)} – ${short(days[6].date)}`,
     today: todayDay || null,
     totals: {
       workoutsDone, minutes: sum(days, d => d.minutes), avgCalories, avgProtein, avgWater,
-      caloriesBurned: sum(days, d => d.caloriesBurned),
       foodDays: foodDays.length, mealsLogged: sum(days, d => d.meals.length),
     },
   }
