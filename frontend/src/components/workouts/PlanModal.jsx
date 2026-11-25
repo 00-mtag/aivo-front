@@ -8,10 +8,11 @@ import { getProfile } from '../../lib/profile'
 const MINUTES = [20, 30, 45, 60, 75, 90]
 const WEEKS = [2, 4, 6, 8, 12]
 const DEFAULTS = { minutes: 45, weeks: 4 }
-const withCurrent = (list, v) => (list.includes(v) ? list : [...list, v].sort((a, b) => a - b))
+// null means "None" (the user did not want to set it), so it is never added to the list.
+const withCurrent = (list, v) => (v == null || list.includes(v) ? list : [...list, v].sort((a, b) => a - b))
 
 // Goal and level come from the onboarding answers (the user's profile), so they are not asked again.
-// The only required choice is where the user trains. Session length and weeks are optional.
+// The only required choice is where the user trains. Session length and weeks are optional (pick "None" to skip).
 export default function PlanModal({ plan, equipment, place, onSave, onClose, onAiDecide }) {
   const profile = getProfile() ?? {}
   const profileGoal = profile.goal ?? profile.fitnessGoal
@@ -23,24 +24,23 @@ export default function PlanModal({ plan, equipment, place, onSave, onClose, onA
   const [f, setF] = useState({
     name: plan?.name ?? `${goal} plan`,
     description: plan?.description ?? '',
-    minutes: plan?.minutes ?? DEFAULTS.minutes,
-    weeks: plan ? planWeeks(plan) : DEFAULTS.weeks,
+    minutes: plan ? (plan.minutes ?? null) : DEFAULTS.minutes,
+    weeks: plan ? (plan.weeks == null ? null : planWeeks(plan)) : DEFAULTS.weeks,
     place: place ?? (startEquipment.length ? placeOf(startEquipment) : null),
     equipment: startEquipment,
   })
-  const [showOptional, setShowOptional] = useState(Boolean(plan))
   const [showDesc, setShowDesc] = useState(Boolean(plan?.description))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = (patch) => setF((s) => ({ ...s, ...patch }))
   const ready = f.name.trim() && f.place && f.equipment.length > 0
-  const isDefault = f.minutes === DEFAULTS.minutes && f.weeks === DEFAULTS.weeks
 
   const submit = async () => {
     if (!ready) return
     setSaving(true)
     setError('')
     try {
+      // minutes / weeks are null when the user picked "None"
       await onSave({ name: f.name.trim(), description: f.description.trim(), goal, level, minutes: f.minutes, weeks: f.weeks, place: f.place, equipment: f.equipment })
     } catch (saveError) {
       setError(saveError.message || 'The workout could not be saved.')
@@ -77,22 +77,20 @@ export default function PlanModal({ plan, equipment, place, onSave, onClose, onA
         <button type="button" onClick={() => setShowDesc(true)} className="mt-2 text-xs font-semibold text-gold hover:underline">+ Add a description</button>
       )}
 
-      {/* Optional: only shown when the user wants to change them */}
+      {/* Optional: always visible. Pick "None" to skip either one. */}
       <Label hint="Optional">Session length and weeks</Label>
-      {showOptional ? (
-        <div>
-          <p className="mb-2 text-xs text-mute">How long is each session?</p>
-          <div className="flex flex-wrap gap-2">{withCurrent(MINUTES, f.minutes).map((m) => <Chip key={m} active={f.minutes === m} onClick={() => set({ minutes: m })}>{m} min</Chip>)}</div>
-          <p className="mb-2 mt-4 text-xs text-mute">For how many weeks?</p>
-          <div className="flex flex-wrap gap-2">{withCurrent(WEEKS, f.weeks).map((w) => <Chip key={w} active={f.weeks === w} onClick={() => set({ weeks: w })}>{w} weeks</Chip>)}</div>
-          {!isDefault && <button type="button" onClick={() => set({ ...DEFAULTS })} className="mt-3 text-xs font-semibold text-gold hover:underline">Reset to {DEFAULTS.minutes} min, {DEFAULTS.weeks} weeks</button>}
+      <div>
+        <p className="mb-2 text-xs text-mute">How long is each session?</p>
+        <div className="flex flex-wrap gap-2">
+          {withCurrent(MINUTES, f.minutes).map((m) => <Chip key={m} active={f.minutes === m} onClick={() => set({ minutes: m })}>{m} min</Chip>)}
+          <Chip active={f.minutes == null} onClick={() => set({ minutes: null })}>None</Chip>
         </div>
-      ) : (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-          <p className="text-sm text-ink/90">Not needed. We use <b>{f.minutes} min</b> for <b>{f.weeks} weeks</b>.</p>
-          <button type="button" onClick={() => setShowOptional(true)} className="shrink-0 text-xs font-semibold text-gold hover:underline">Change</button>
+        <p className="mb-2 mt-4 text-xs text-mute">For how many weeks?</p>
+        <div className="flex flex-wrap gap-2">
+          {withCurrent(WEEKS, f.weeks).map((w) => <Chip key={w} active={f.weeks === w} onClick={() => set({ weeks: w })}>{w} weeks</Chip>)}
+          <Chip active={f.weeks == null} onClick={() => set({ weeks: null })}>None</Chip>
         </div>
-      )}
+      </div>
     </Modal>
   )
 }

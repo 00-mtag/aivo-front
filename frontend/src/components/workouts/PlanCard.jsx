@@ -135,18 +135,18 @@ export default function PlanCard({ plan, open, isNew, onStart, onCalendar, onTog
 
       {/* Collapsed: a quick look at the week and a one-tap start */}
       {!open && (
-        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
-          <div className="flex gap-1.5" aria-label="Training days">
+        <div className="flex items-center justify-between gap-2 border-t border-white/10 px-3 py-3 sm:gap-3 sm:px-4">
+          <div className="flex min-w-0 flex-1 gap-1 sm:flex-none sm:gap-1.5" aria-label="Training days">
             {DAYS.map((d) => {
               const on = plan.schedule[d]?.length > 0
               return <span key={d} title={`${DAY_NAMES[d]}${on ? `: ${plural(plan.schedule[d].length)}` : ': rest'}`}
-                className={`grid h-7 w-7 place-items-center rounded-full text-[10px] font-semibold ${on ? 'bg-gold text-black' : 'bg-white/8 text-mute'} ${d === today ? 'ring-1 ring-gold ring-offset-2 ring-offset-[#1a1a1a]' : ''}`}
+                className={`grid aspect-square min-w-0 max-w-7 flex-1 place-items-center rounded-full text-[10px] font-semibold sm:h-7 sm:w-7 sm:flex-none ${on ? 'bg-gold text-black' : 'bg-white/8 text-mute'} ${d === today ? 'ring-1 ring-gold ring-offset-2 ring-offset-[#1a1a1a]' : ''}`}
                 style={on ? undefined : { background: 'rgba(255,255,255,.07)' }}>{d[0]}</span>
             })}
           </div>
           {plan.schedule[today]?.length > 0
-            ? <button type="button" onClick={() => onStart(today)} className={`${goldBtn} flex items-center gap-1.5 !px-4 !py-2 text-xs`}><Play size={14} /> Start today</button>
-            : <button type="button" onClick={onToggle} className="text-xs font-semibold text-gold hover:underline">{total ? 'Open plan' : 'Add exercises'}</button>}
+            ? <button type="button" onClick={() => onStart(today)} className={`${goldBtn} flex shrink-0 items-center gap-1.5 whitespace-nowrap !px-3 !py-2 text-xs sm:!px-4`}><Play size={14} /> Start today</button>
+            : <button type="button" onClick={onToggle} className="shrink-0 whitespace-nowrap text-xs font-semibold text-gold hover:underline">{total ? 'Open plan' : 'Add exercises'}</button>}
         </div>
       )}
 
@@ -226,13 +226,13 @@ export default function PlanCard({ plan, open, isNew, onStart, onCalendar, onTog
             <Plus size={16} /> Add exercise to {DAY_NAMES[day]}
           </button>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3 border-t border-white/10 pt-4 sm:justify-start">
             <button type="button" disabled={!startDay} onClick={() => onStart(startDay)} className={`${goldBtn} flex items-center gap-2`}>
               <Play size={16} /> {startDay ? `Start ${DAY_NAMES[startDay]}` : 'Start workout'}
             </button>
             <button type="button" onClick={onCalendar} className={`${ghostBtn} flex items-center gap-2`}><CalendarPlus size={16} /> Calendar</button>
           </div>
-          {!startDay && <p className="mt-2 text-[11px] text-mute">Add at least one exercise to a day to start a workout.</p>}
+          {!startDay && <p className="mt-2 text-center text-[11px] text-mute sm:text-left">Add at least one exercise to a day to start a workout.</p>}
         </div>
       )}
 
