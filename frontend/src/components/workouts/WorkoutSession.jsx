@@ -4,6 +4,7 @@ import { DAY_NAMES, equipmentLabel, exerciseLine, exerciseTarget, fmtClock as fm
 import { api, errorsFrom } from '../../lib/api'
 import { ghostBtn, goldBtn } from './Modal'
 import { getProfile } from '../../lib/profile'
+import { estimateKcal } from '../../lib/customExercises'
 
 const REST_TIMED = 30   // seconds of rest after a timed set
 const REST_REPS = 60    // seconds of rest after a sets-and-reps set
@@ -217,6 +218,7 @@ export default function WorkoutSession({ plan, day, onClose, onComplete }) {
   const [pendingRecord, setPendingRecord] = useState(null)
   const [calorieRecords, setCalorieRecords] = useState([])
   const [totalCaloriesBurned, setTotalCaloriesBurned] = useState(0)
+  const [ownKcal, setOwnKcal] = useState(0)   // estimated calories for the user's own exercises
   const [needsBodyWeight, setNeedsBodyWeight] = useState(false)
   const [bodyWeightKg, setBodyWeightKg] = useState(() => {
     const weight = Number(getProfile()?.weightKg)
@@ -227,6 +229,14 @@ export default function WorkoutSession({ plan, day, onClose, onComplete }) {
   const exerciseDurations = useRef({})
   const completeRef = useRef(onComplete)
   completeRef.current = onComplete
+  const ownKcalRef = useRef(0)
+
+  // The server cannot calculate calories for exercises it does not know, so we estimate them.
+  const bodyKg = () => {
+    const w = Number(getProfile()?.weightKg)
+    return Number.isFinite(w) && w >= 20 ? w : Number(bodyWeightKg) || 70
+  }
+  const kcalOwn = (e, st) => (e.custom && st[e.id] === 'done' ? estimateKcal(e, exerciseDurations.current[e.id] ?? 0, bodyKg()) : 0)
 
   useEffect(() => {
     if (!started || finished) return undefined
@@ -255,7 +265,7 @@ export default function WorkoutSession({ plan, day, onClose, onComplete }) {
       setTotalCaloriesBurned(Number(data.total_calories_burned) || 0)
       setPendingRecord(null)
       setFinished(true)
-      completeRef.current?.({ name: plan.name, day, minutes: Math.max(1, Math.round(record.workout_duration / 60)), done: record.exercises_done, skipped: record.exercises_skipped })
+      completeRef.current?.({ name: plan.name, day, minutes: Math.max(1, Math.round(record.workout_duration / 60)), done: record.exercises_done, skipped: record.exercises_skipped, calories: Math.round(Number(data.total_calories_burned) || 0) + ownKcalRef.current })
     } catch (error) {
       setPendingRecord(record)
       setNeedsBodyWeight(Boolean(error.response?.data?.errors?.body_weight_kg))
@@ -275,18 +285,29 @@ export default function WorkoutSession({ plan, day, onClose, onComplete }) {
       setResting(false)
       const duration = Math.floor((Date.now() - startedAt.current) / 1000)
       setElapsed(duration)
-      const exerciseDurationsPayload = list
+      // The server only gets the catalog exercises. The user's own ones are counted here on the device.
+      const serverList = list.filter((exercise) => !exercise.custom)
+      ownKcalRef.current = list.reduce((n, exercise) => n + kcalOwn(exercise, nextStatus), 0)
+      setOwnKcal(ownKcalRef.current)
+      const exerciseDurationsPayload = serverList
         .filter((exercise) => exerciseDurations.current[exercise.id] > 0)
         .map((exercise) => ({
           workout_exercise_id: Number(exercise.id),
           duration_seconds: exerciseDurations.current[exercise.id],
         }))
+      if (serverList.length === 0) {
+        setCalorieRecords([])
+        setTotalCaloriesBurned(0)
+        setFinished(true)
+        completeRef.current?.({ name: plan.name, day, minutes: Math.max(1, Math.round(duration / 60)), done: list.filter((e) => nextStatus[e.id] === 'done').length, skipped: list.filter((e) => nextStatus[e.id] === 'skipped').length, calories: ownKcalRef.current })
+        return
+      }
       void saveCompletion({
         workout_id: plan.id,
         workout_type: DAY_NAMES[day],
         workout_duration: duration,
-        exercises_done: list.filter((exercise) => nextStatus[exercise.id] === 'done').length,
-        exercises_skipped: list.filter((exercise) => nextStatus[exercise.id] === 'skipped').length,
+        exercises_done: serverList.filter((exercise) => nextStatus[exercise.id] === 'done').length,
+        exercises_skipped: serverList.filter((exercise) => nextStatus[exercise.id] === 'skipped').length,
         exercise_durations: exerciseDurationsPayload,
         ...(bodyWeightKg ? { body_weight_kg: Number(bodyWeightKg) } : {}),
       })
@@ -365,7 +386,7 @@ export default function WorkoutSession({ plan, day, onClose, onComplete }) {
                 return (
                   <li key={e.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-card px-3 py-3">
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/10 text-xs font-bold">{n + 1}</span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{e.name}</span><span className="block text-xs text-mute">{exerciseLine(e)}</span></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{e.name}{e.custom && <span className="ml-2 rounded-md bg-gold/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-gold">Mine</span>}</span><span className="block text-xs text-mute">{exerciseLine(e)}</span></span>
                     <span className="text-gold" aria-label={t.timed ? 'Timed' : 'Reps'}>{t.timed ? <Timer size={18} /> : <Dumbbell size={18} />}</span>
                   </li>
                 )
@@ -385,18 +406,18 @@ export default function WorkoutSession({ plan, day, onClose, onComplete }) {
             <h1 className="mt-5 text-3xl font-bold">Workout complete!</h1>
             <p className="mt-1 text-sm text-ink/80">Great job finishing {DAY_NAMES[day]}'s session.</p>
             <div className="mt-6 grid w-full grid-cols-2 gap-3 sm:grid-cols-4">
-              {[['Time', fmt(elapsed)], ['Done', done], ['Skipped', skipped], ['Calories burned', `${fmt(totalCaloriesBurned)} kcal`]].map(([k, v]) => (
+              {[['Time', fmt(elapsed)], ['Done', done], ['Skipped', skipped], ['Calories burned', `${fmt(totalCaloriesBurned + ownKcal)} kcal`]].map(([k, v]) => (
                 <div key={k} className="rounded-xl border border-white/10 bg-card p-3"><p className="text-2xl font-bold text-gold">{v}</p><p className="text-[11px] text-mute">{k}</p></div>
               ))}
             </div>
-            <p className="mt-2 text-[11px] text-mute">Calories are estimates based on exercise time, activity intensity, and body weight.</p>
+            <p className="mt-2 text-[11px] text-mute">Calories are estimates based on exercise time, activity intensity, and body weight.{list.some((e) => e.custom) && ' Your own exercises use a general estimate (marked with ~) because they are not in the exercise catalog.'}</p>
             <ul className="mt-5 w-full space-y-2 text-left text-sm">
               {list.map((e) => (
                 <li key={e.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-card px-4 py-2.5">
                   <span>{e.name}</span>
                   <span className="text-right">
                     <span className={`block ${status[e.id] === 'done' ? 'text-green-400' : 'text-mute'}`}>{status[e.id] === 'done' ? 'Done' : 'Skipped'}</span>
-                    <span className="text-xs text-gold">{fmt(calorieByWorkoutExercise[e.id] ?? 0)} kcal</span>
+                    <span className="text-xs text-gold">{e.custom ? `~${kcalOwn(e, status)}` : fmt(calorieByWorkoutExercise[e.id] ?? 0)} kcal</span>
                   </span>
                 </li>
               ))}
@@ -431,6 +452,7 @@ export default function WorkoutSession({ plan, day, onClose, onComplete }) {
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <span className="rounded-md bg-white/10 px-2 py-0.5 text-[11px]">{ex.muscle}</span>
               {timed && <span className="flex items-center gap-1 rounded-md bg-gold/15 px-2 py-0.5 text-[11px] font-semibold text-gold"><Timer size={12} /> Timed</span>}
+              {ex.custom && <span className="rounded-md bg-gold/15 px-2 py-0.5 text-[11px] font-semibold text-gold">Mine</span>}
               <span className="text-sm font-semibold text-gold">{ex.sets} sets × {target.label}</span>
               {!timed && ex.weight && <span className="text-xs text-mute">{ex.weight}</span>}
             </div>

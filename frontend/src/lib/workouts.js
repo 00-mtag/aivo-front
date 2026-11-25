@@ -65,7 +65,8 @@ export function workoutBody(plan) {
     minutes_per_session: String(plan.minutes),
     duration: `${planWeeks(plan)} weeks`,
     active: isActive(plan),
-    exercises: DAYS.flatMap((day) => (plan.schedule[day] ?? []).map((exercise, sortOrder) => ({
+    // Custom exercises (typed in by the user) stay on this device. The server only gets catalog exercises.
+    exercises: DAYS.flatMap((day) => (plan.schedule[day] ?? []).filter((exercise) => !exercise.custom && exercise.exerciseId != null).map((exercise, sortOrder) => ({
       day,
       exercise_id: exercise.exerciseId,
       sets: String(exercise.sets),
@@ -188,7 +189,8 @@ export function enrichExercise(raw) {
     ? raw.muscles
     : inferMuscles(name, raw.muscle_group ?? raw.muscle ?? raw.target_muscle ?? raw.catalog_muscle_group)
   return {
-    id: Number(raw.exercise_id ?? raw.id),
+    id: raw.custom ? raw.id : Number(raw.exercise_id ?? raw.id),
+    custom: Boolean(raw.custom),
     name,
     timed,
     weightORduration: timed ? 'duration' : 'weight',

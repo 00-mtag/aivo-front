@@ -21,6 +21,7 @@ import { api, errorsFrom } from '../lib/api'
 import { userKey } from '../lib/profile'
 import { PROGRESS_EVENT, logWorkout, readAll, syncWorkoutPlan, toKey } from '../lib/progress'
 import { STALE, cachedGet, patchCache, peek } from '../lib/cache'
+import { cloneCustomForPlan, mergeCustom, newCustomId, removeCustomForPlan, saveCustomForPlan } from '../lib/customExercises'
 
 const AI_SUGGESTIONS = ['Suggest a workout for muscle gain', 'How many calories should I eat?', 'Create a cardio plan']
 const todayName = () => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()]
@@ -102,7 +103,7 @@ export default function Workouts() {
         setPlansError('The workout list could not be loaded.')
         return
       }
-      const loadedPlans = data.workouts.map(normalizeWorkout)
+      const loadedPlans = data.workouts.map(normalizeWorkout).map(mergeCustom)   // plus the user's own exercises (kept on this device)
       setPlans(loadedPlans)
       savePlans(loadedPlans)
       setPlansLoaded(true)
@@ -189,7 +190,7 @@ export default function Workouts() {
       if (planModal.planId) {
         const plan = plans.find((item) => item.id === planModal.planId)
         const { data } = await api.put(`/workouts/${planModal.planId}`, workoutBody({ ...plan, ...fields }))
-        const saved = normalizeWorkout(data.workout)
+        const saved = mergeCustom(normalizeWorkout(data.workout))
         cachePut(data.workout)
         setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
         setPlanEquipment(saved.id, equipment)
@@ -258,12 +259,25 @@ export default function Workouts() {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
   }
+  // Save a plan. The server gets the normal exercises; the user's own exercises stay on this device.
+  const commitPlan = async (plan) => {
+    const before = plans.find((p) => p.id === plan.id)
+    saveCustomForPlan(plan.id, plan.schedule)
+    const unchanged = before && JSON.stringify(workoutBody(before)) === JSON.stringify(workoutBody(plan))
+    if (unchanged) {                                   // only own exercises changed: nothing to send
+      const saved = mergeCustom(plan)
+      setPlans((current) => current.map((item) => (item.id === saved.id ? saved : item)))
+      return saved
+    }
+    const { data } = await api.put(`/workouts/${plan.id}`, workoutBody(plan))
+    cachePut(data.workout)
+    const saved = mergeCustom(normalizeWorkout(data.workout))
+    setPlans((current) => current.map((item) => (item.id === saved.id ? saved : item)))
+    return saved
+  }
   const persistPlan = async (plan) => {
     try {
-      const { data } = await api.put(`/workouts/${plan.id}`, workoutBody(plan))
-      const saved = normalizeWorkout(data.workout)
-      cachePut(data.workout)
-      setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
+      await commitPlan(plan)
       setActionError('')
     } catch (error) {
       setActionError(errorsFrom(error).form)
@@ -272,8 +286,10 @@ export default function Workouts() {
   const duplicatePlan = async (p) => {
     try {
       const { data } = await api.post('/workouts', workoutBody({ ...p, name: `${p.name} copy`.slice(0, 40) }))
-      const saved = normalizeWorkout(data.workout)
       cachePut(data.workout)
+      const created = normalizeWorkout(data.workout)
+      cloneCustomForPlan(p.id, created.id)
+      const saved = mergeCustom(created)
       setPlans((current) => [saved, ...current])
       setPlanEquipment(saved.id, p.equipment)
       setOpenId(saved.id)
@@ -290,6 +306,7 @@ export default function Workouts() {
     try {
       await api.delete(`/workouts/${p.id}`)
       cacheRemove(p.id)
+      removeCustomForPlan(p.id)
       setPlans((ps) => ps.filter((x) => x.id !== p.id))
       if (openId === p.id) setOpenId(null)
       setActionError('')
@@ -304,31 +321,29 @@ export default function Workouts() {
   }
   const saveExercise = async (ex) => {
     const { planId, day } = exModal
-    if (exerciseCatalog.goal !== exerciseGoal) {
-      throw new Error('Wait for exercise suggestions to load for this workout goal.')
-    }
-    const matchedExercise = exerciseCatalog.exercises.find(
-      ({ name }) => name.trim().toLowerCase() === ex.name.trim().toLowerCase()
-    )
-    const keepsExistingExercise = ex.exerciseId
-      && ex.name.trim().toLowerCase() === exModal.exercise?.name.trim().toLowerCase()
-    const exerciseId = matchedExercise?.id ?? (keepsExistingExercise ? ex.exerciseId : null)
-    if (!exerciseId) throw new Error('Choose an exercise from the list.')
-
     const plan = plans.find((item) => item.id === planId)
     const list = plan.schedule[day] ?? []
-    const updatedExercise = { ...ex, exerciseId, name: matchedExercise?.name ?? ex.name }
-    const next = ex.id
-      ? list.map((item) => item.id === ex.id ? updatedExercise : item)
-      : [...list, { ...updatedExercise, id: uid() }]
+
+    let item
+    if (ex.custom) {
+      // The user's own exercise: no catalog id needed. It carries its own equipment, muscles and type.
+      item = { ...ex, custom: true, exerciseId: null, id: ex.id ?? newCustomId() }
+    } else {
+      if (exerciseCatalog.goal !== exerciseGoal) {
+        throw new Error('Wait for exercise suggestions to load for this workout goal.')
+      }
+      const matchedExercise = exerciseCatalog.exercises.find(
+        ({ name }) => name.trim().toLowerCase() === ex.name.trim().toLowerCase()
+      )
+      const keepsExistingExercise = ex.exerciseId
+        && ex.name.trim().toLowerCase() === exModal.exercise?.name.trim().toLowerCase()
+      const exerciseId = matchedExercise?.id ?? (keepsExistingExercise ? ex.exerciseId : null)
+      if (!exerciseId) throw new Error('Choose an exercise from the list, or add it as your own exercise.')
+      item = { ...ex, exerciseId, name: matchedExercise?.name ?? ex.name, id: ex.id ?? uid() }
+    }
+    const next = ex.id ? list.map((existing) => (existing.id === ex.id ? item : existing)) : [...list, item]
     try {
-      const { data } = await api.put(`/workouts/${planId}`, workoutBody({
-        ...plan,
-        schedule: { ...plan.schedule, [day]: next },
-      }))
-      const saved = normalizeWorkout(data.workout)
-      cachePut(data.workout)
-      setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
+      await commitPlan({ ...plan, schedule: { ...plan.schedule, [day]: next } })
       setActionError('')
       setSelectedDay(day)
       setExModal(null)
@@ -342,13 +357,7 @@ export default function Workouts() {
     const plan = plans.find((item) => item.id === planId)
     const exercises = (plan.schedule[day] ?? []).filter((item) => item.id !== exercise.id)
     try {
-      const { data } = await api.put(`/workouts/${planId}`, workoutBody({
-        ...plan,
-        schedule: { ...plan.schedule, [day]: exercises },
-      }))
-      const saved = normalizeWorkout(data.workout)
-      cachePut(data.workout)
-      setPlans((current) => current.map((item) => item.id === saved.id ? saved : item))
+      await commitPlan({ ...plan, schedule: { ...plan.schedule, [day]: exercises } })
       setActionError('')
       setExModal(null)
       notify('Exercise removed')
@@ -364,7 +373,8 @@ export default function Workouts() {
     logWorkout({
       name: summary.name ?? plan?.name ?? 'Workout',
       minutes: summary.minutes ?? plan?.minutes ?? 0,
-      exercises: exercises.map(({ name, sets, reps }) => ({ name, sets, reps })),
+      calories: summary.calories ?? 0,
+      exercises: exercises.map(({ name, sets, reps, muscle, muscles, equipment, custom }) => ({ name, sets, reps, muscle, muscles, equipment, custom: Boolean(custom) })),
     })
   }
 

@@ -197,7 +197,7 @@ export default function PlanCard({ plan, open, isNew, onStart, onCalendar, onTog
                     <button type="button" onClick={() => onOpenExercise(day, e, false)} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left">
                       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-white/10 bg-[#101010] text-gold">{timed ? <Timer size={18} /> : <Dumbbell size={18} />}</span>
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold">{e.name}</span>
+                        <span className="block truncate text-sm font-semibold">{e.name}{e.custom && <span className="ml-2 rounded-md bg-gold/15 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-gold">Mine</span>}</span>
                         <span className="block text-xs text-mute">{exerciseLine(e)}</span>
                       </span>
                     </button>

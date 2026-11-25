@@ -57,8 +57,8 @@ const short = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric
 
 /* ---------- write API (call these from Workouts / Nutrition pages) ---------- */
 // logWorkout({ name: 'Full body A', minutes: 30, exercises: [{ name: 'Squats', sets: 3, reps: 12 }] })
-export const logWorkout = ({ name, minutes = 0, exercises = [], date = todayKey() }) =>
-  append(KEYS.workoutLog, { id: uid(), date, name, minutes: Number(minutes) || 0, exercises })
+export const logWorkout = ({ name, minutes = 0, exercises = [], calories = 0, date = todayKey() }) =>
+  append(KEYS.workoutLog, { id: uid(), date, name, minutes: Number(minutes) || 0, calories: Number(calories) || 0, exercises })
 
 // logMeal({ type: 'Lunch', name: 'Chicken rice bowl', calories: 620, protein: 42 })
 export const logMeal = ({ type = 'Meal', name, calories = 0, protein = 0, date = todayKey() }) =>
