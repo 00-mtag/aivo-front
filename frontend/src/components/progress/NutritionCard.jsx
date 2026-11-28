@@ -1,4 +1,4 @@
-import { Droplet, Flame, UtensilsCrossed } from 'lucide-react'
+import { Droplet, Flame, UtensilsCrossed, Wheat } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card, CardTitle, ProgressBar, fmt } from './ui'
 
@@ -23,8 +23,10 @@ export default function NutritionCard({ progress, onDetails, root }) {
   const live = weekOffset === 0 && today
   const cal = live ? today.calories : totals.avgCalories
   const pro = live ? today.protein : totals.avgProtein
+  const carbs = live ? today.carbs : totals.avgCarbs
+  const fat = live ? today.fat : totals.avgFat
   const wat = live ? today.water : totals.avgWater
-  const empty = !cal && !pro && !wat
+  const empty = !cal && !pro && !carbs && !fat && !wat
   return (
     <Card className="lg:col-span-4">
       <CardTitle icon={UtensilsCrossed} action={<button onClick={onDetails} className="text-xs text-gold hover:underline">See details</button>}>
@@ -39,6 +41,8 @@ export default function NutritionCard({ progress, onDetails, root }) {
         <div className="space-y-4">
           <Row icon={Flame} label="Calories" value={cal} goal={targets.calories} unit="kcal" over={cal > targets.calories * 1.1} />
           <Row icon={UtensilsCrossed} label="Protein" value={pro} goal={targets.protein} unit="g" />
+          <Row icon={Wheat} label="Carbs" value={carbs} goal={targets.carbohydrates} unit="g" />
+          <Row icon={Droplet} label="Fat" value={fat} goal={targets.fat} unit="g" />
           <Row icon={Droplet} label="Water" value={wat} goal={targets.water} unit="L" />
         </div>
       )}

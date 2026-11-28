@@ -1,5 +1,7 @@
 import { api } from './api'
 
+export const FOOD_ALLERGIES = ['Milk', 'Eggs', 'Peanuts', 'Tree nuts', 'Fish', 'Shellfish', 'Wheat', 'Soybeans', 'Sesame']
+
 // Keep the profile locally for the route guard and UI; the backend remains authoritative.
 export const userKey = (prefix) => {
   try {

@@ -5,7 +5,7 @@ import WheelPicker from '../components/onboarding/WheelPicker'
 import { BmiMeter, Chip, OptionCard, Screen, Segmented, bmiBand } from '../components/onboarding/parts'
 import logo from '../assets/logo.png'
 import { api, errorsFrom } from '../lib/api'
-import { calculateTdee, saveProfile } from '../lib/profile'
+import { calculateTdee, FOOD_ALLERGIES, saveProfile } from '../lib/profile'
 import { recommend } from '../lib/recommend'
 import { logWeight, setTargets } from '../lib/progress'
 
@@ -32,7 +32,6 @@ const ACTIVITY = [
   { value: 'Very active', icon: Activity, desc: 'Hard exercise 6 to 7 days a week' },
   { value: 'Extra active', icon: Zap, desc: 'Physical job, or training twice a day' },
 ]
-const ALLERGIES = ['Milk', 'Eggs', 'Peanuts', 'Tree nuts', 'Fish', 'Shellfish', 'Wheat', 'Soybeans', 'Sesame']
 const DIETS = ['Vegetarian', 'Vegan', 'Pescatarian', 'Halal', 'Keto', 'Low carb', 'Gluten-free', 'Dairy-free', 'High protein']
 const HEALTH_CONDITIONS = [
   'High Blood Pressure (Hypertension)',
@@ -380,7 +379,7 @@ export default function Onboarding() {
               <Screen title="Any food allergies or diet?" subtitle="Optional. Tap everything that applies, or skip.">
                 <h2 className="mb-2.5 text-sm font-bold">Food allergies</h2>
                 <div className="flex flex-wrap gap-2">
-                  {ALLERGIES.map((a) => <Chip key={a} active={allergies.includes(a)} onClick={() => setAllergies((l) => toggleIn(l, a))}>{a}</Chip>)}
+                  {FOOD_ALLERGIES.map((a) => <Chip key={a} active={allergies.includes(a)} onClick={() => setAllergies((l) => toggleIn(l, a))}>{a}</Chip>)}
                   <Chip active={allergyOther} onClick={() => setAllergyOther((v) => !v)}>Other</Chip>
                 </div>
                 {allergyOther && <input value={otherAllergy} onChange={(e) => setOtherAllergy(e.target.value)} maxLength={255} aria-label="Other allergy" placeholder="Type your allergy" className={`${inputClass} mt-3`} />}

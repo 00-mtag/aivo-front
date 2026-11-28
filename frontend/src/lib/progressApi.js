@@ -22,7 +22,7 @@ function mealEntries(meals, intakeRecords) {
     intakeByMeal.set(mealId, (intakeByMeal.get(mealId) ?? 0) + number(record.calories_intake))
   }
 
-  return dedupeMeals(meals.filter((meal) => intakeByMeal.has(Number(meal.meal_id))).map((meal) => {
+  return dedupeMeals(meals.filter((meal) => intakeByMeal.has(Number(meal.meal_id)))).map((meal) => {
     const items = meal.items ?? []
     const itemTotal = (key) => items.reduce((total, item) => total + number(item[key]), 0)
     const mealId = Number(meal.meal_id)
@@ -37,7 +37,7 @@ function mealEntries(meals, intakeRecords) {
       carbs: itemTotal('carbohydrates'),
       fat: itemTotal('fat'),
     }
-  }))
+  })
 }
 
 function activeWorkoutPlans(workouts) {
@@ -106,6 +106,8 @@ export async function fetchProgressData({ force = false } = {}) {
       targets: {
         calories: goal?.daily_calories || DEFAULT_TARGETS.calories,
         protein: goal?.daily_protein || DEFAULT_TARGETS.protein,
+        carbohydrates: goal?.daily_carbohydrates || DEFAULT_TARGETS.carbohydrates,
+        fat: goal?.daily_fat || DEFAULT_TARGETS.fat,
         water: local.profile?.targets?.water || DEFAULT_TARGETS.water,
         workoutsPerWeek: plannedDays.size || DEFAULT_TARGETS.workoutsPerWeek,
       },

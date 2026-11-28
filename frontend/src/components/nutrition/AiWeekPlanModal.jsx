@@ -1,25 +1,37 @@
 import { useState } from 'react'
 import Modal, { Field, fieldClass, ghostBtn, goldBtn } from '../workouts/Modal'
 import { api, errorsFrom } from '../../lib/api'
+import { fromYmd, toYmd } from '../../lib/nutrition'
 
 const MAX_CALORIES = 5000
 
-export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDate, endDate, goal, gender, beforeGenerate, onSave, onClose }) {
+export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDate, goal, gender, beforeGenerate, onSave, onClose }) {
   const minCalories = gender === 'Female' ? 1200 : 1500
   const recommendedCalories = Math.min(MAX_CALORIES, Math.max(minCalories, defaultCalories))
+  const [planStartDate, setPlanStartDate] = useState(startDate)
   const [customCalories, setCustomCalories] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const dateOptions = { weekday: 'short', month: 'short', day: 'numeric' }
-  const dateRange = `${new Date(`${startDate}T00:00:00`).toLocaleDateString('en-US', dateOptions)} – ${new Date(`${endDate}T00:00:00`).toLocaleDateString('en-US', dateOptions)}`
+  const start = planStartDate ? fromYmd(planStartDate) : null
+  const planEndDate = start
+    ? toYmd(new Date(start.getFullYear(), start.getMonth(), start.getDate() + ((7 - start.getDay()) % 7)))
+    : ''
+  const dateRange = start
+    ? `${start.toLocaleDateString('en-US', dateOptions)} – ${fromYmd(planEndDate).toLocaleDateString('en-US', dateOptions)}`
+    : 'select a start date'
 
   const generate = async () => {
     const dailyCalories = Number(customCalories ?? recommendedCalories)
+    if (!planStartDate) {
+      setError('Choose a start date for the meal plan.')
+      return
+    }
     if (!Number.isInteger(dailyCalories) || dailyCalories < minCalories || dailyCalories > MAX_CALORIES) {
       setError(`Enter a whole number between ${minCalories.toLocaleString()} and ${MAX_CALORIES.toLocaleString()} kcal/day.`)
       return
     }
-    if (!beforeGenerate()) return
+    if (!beforeGenerate(planStartDate)) return
     setBusy(true)
     setError('')
     try {
@@ -28,7 +40,7 @@ export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDa
         daily_protein: macroTargets.daily_protein,
         daily_carbohydrates: macroTargets.daily_carbohydrates,
         daily_fat: macroTargets.daily_fat,
-        start_date: startDate,
+        start_date: planStartDate,
         goal,
       })
       await onSave(data)
@@ -45,13 +57,18 @@ export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDa
     <Modal title="Let AI decide" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm leading-relaxed text-ink/90">
-          AIVO will create breakfast, lunch, dinner, and snack for each remaining day this week ({dateRange}), using foods in the app database. It will not add meals for next week.
+          AIVO will create breakfast, lunch, dinner, and snack from the selected start date through Sunday ({dateRange}), using foods in the app database.
           Your TDEE and fitness goal are used to suggest a starting daily calorie target, which you can change.
           Your daily protein, carbohydrate, and fat targets are sent to guide the plan and enforced as limits.
         </p>
         <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
           AI-generated meals are suggestions and may not meet your daily macro-nutrient needs. Review and adjust the plan to fit your requirements.
         </p>
+        <Field label="Start date">
+          <input type="date" value={planStartDate}
+            onChange={(event) => { setPlanStartDate(event.target.value); setError('') }}
+            className={fieldClass} />
+        </Field>
         <Field label="Daily calorie target (kcal)">
           <input type="number" min={minCalories} max={MAX_CALORIES} step="1" value={customCalories ?? recommendedCalories}
             onChange={(event) => { setCustomCalories(event.target.value); setError('') }}
@@ -63,8 +80,8 @@ export default function AiWeekPlanModal({ defaultCalories, macroTargets, startDa
           These limits help prevent calorie targets that are too low or unusually high.
         </p>
         <p className="text-[11px] text-mute">
-          When you create the plan, your saved allergies and dietary preferences will be shared with the AI along with the selected target and available food catalog.
-          Food details may be incomplete, so review the plan for allergen safety. Calorie estimates are not medical advice.
+          Your saved allergies and dietary preferences are checked against the food ingredients. AIVO retries once if a conflict is found; if it still cannot avoid an allergen, the plan will not be saved.
+          Ingredient details can be incomplete, so review meals before eating. Calorie estimates are not medical advice.
         </p>
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <div className="flex justify-end gap-3 pt-1">

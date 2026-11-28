@@ -6,6 +6,7 @@ import WorkoutChatSuggestion, { parseWorkoutSuggestion } from '../components/wor
 import { parseNutritionSuggestion } from '../lib/nutritionSuggestion'
 import { api } from '../lib/api'
 import { toYmd } from '../lib/nutrition'
+import NutritionChatSuggestion from '../components/nutrition/NutritionChatSuggestion'
 import logo from '../assets/logo.png'
 
 const QUICK = [
@@ -215,6 +216,8 @@ export default function AiCoach() {
                     <div className="min-w-0 max-w-[85%]">
                       {category === 'workout'
                         ? <WorkoutChatSuggestion content={item.content} />
+                        : category === 'nutrition'
+                          ? <NutritionChatSuggestion content={item.content} />
                         : <p className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm leading-relaxed">{item.content}</p>}
                       {category === 'workout'
                         && parseWorkoutSuggestion(item.content)

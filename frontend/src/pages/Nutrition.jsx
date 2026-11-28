@@ -53,12 +53,6 @@ export default function Nutrition() {
   const dates = weekDates(weekOffset)
   const today = new Date()
   const todayYmd = toYmd(today)
-  const daysUntilSunday = (7 - today.getDay()) % 7
-  const planEndDate = toYmd(new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysUntilSunday))
-  const aiPlanDates = Array.from({ length: daysUntilSunday + 1 }, (_, offset) =>
-    toYmd(new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset)),
-  )
-  const aiPlanRange = `${fromYmd(todayYmd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${fromYmd(planEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
   const totals = dayTotals(meals, selected)
   const profile = getProfile()
   const goalAdjustment = { 'Lose weight': -500, 'Build muscle': 300, 'Improve endurance': 100, 'Maintain fitness': 0 }[rec.goal] ?? 0
@@ -85,10 +79,30 @@ export default function Nutrition() {
     setSelected(toYmd(weekDates(weekOffset + delta)[idx]))
   }
   const goToday = () => { setWeekOffset(0); setSelected(todayYmd) }
+  const showMealDate = (dateString) => {
+    const date = fromYmd(dateString)
+    const monday = (day) => new Date(day.getFullYear(), day.getMonth(), day.getDate() - ((day.getDay() + 6) % 7))
+    const targetWeek = monday(date)
+    const currentWeek = weekDates(0)[0]
+    const offset = Math.round((
+      Date.UTC(targetWeek.getFullYear(), targetWeek.getMonth(), targetWeek.getDate())
+      - Date.UTC(currentWeek.getFullYear(), currentWeek.getMonth(), currentWeek.getDate())
+    ) / (7 * 24 * 60 * 60 * 1000))
+    setWeekOffset(offset)
+    setSelected(dateString)
+  }
 
-  const confirmReplaceWeek = () => {
-    return !meals.some((meal) => aiPlanDates.includes(meal.meal_date) && meal.items.length)
-      || window.confirm(`Replace the meals already planned for ${aiPlanRange}?`)
+  const confirmReplaceWeek = (startDate) => {
+    const start = fromYmd(startDate)
+    const daysUntilSunday = (7 - start.getDay()) % 7
+    const planDates = Array.from({ length: daysUntilSunday + 1 }, (_, offset) =>
+      toYmd(new Date(start.getFullYear(), start.getMonth(), start.getDate() + offset)),
+    )
+    const endDate = fromYmd(planDates[planDates.length - 1])
+    const range = `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+
+    return !meals.some((meal) => planDates.includes(meal.meal_date) && meal.items.length)
+      || window.confirm(`Replace the meals already planned for ${range}?`)
   }
   const saveGeneratedWeek = async (generatedPlan) => {
     setAiPlanSaving(true)
@@ -120,6 +134,7 @@ export default function Nutrition() {
           replace_existing: replaceExisting,
         })
         nu.replaceWeekMeals({ meals: data.meals, nutrition_goal: goal })
+        showMealDate(parsed.dates[0])
         return `Saved ${data.meals.length} meals to your meal plan.`
       }
 
@@ -130,6 +145,7 @@ export default function Nutrition() {
         meal_date: selected,
       })
       nu.acceptSavedMeal(data.meal)
+      showMealDate(data.meal.meal_date)
       return `${data.meal.meal_type} was saved to your meal plan for ${data.meal.meal_date}.`
     } catch (error) {
       const requestError = new Error(error.response?.data?.message || error.message || 'This suggestion could not be saved.', { cause: error })
@@ -279,7 +295,7 @@ export default function Nutrition() {
       )}
       {aiPlanOpen && (
         <AiWeekPlanModal defaultCalories={defaultCalories} macroTargets={goal}
-          startDate={todayYmd} endDate={planEndDate} goal={rec.goal} gender={profile?.gender}
+          startDate={todayYmd} goal={rec.goal} gender={profile?.gender}
           beforeGenerate={confirmReplaceWeek}
           onSave={saveGeneratedWeek}
           onClose={() => { if (!aiPlanSaving) setAiPlanOpen(false) }} />

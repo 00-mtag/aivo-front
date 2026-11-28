@@ -68,6 +68,8 @@ export default function Dashboard() {
           fitness_goal: values.goal ?? values.fitnessGoal,
           experience_level: values.level ?? values.experience ?? values.experienceLevel,
           target_weight: values.targetWeightKg == null ? null : String(values.targetWeightKg),
+          allergies: values.allergies,
+          health_conditions: values.healthConditions,
         })
         serverTdee = data.profile?.tdee == null ? null : Number(data.profile.tdee)
       } catch (error) {

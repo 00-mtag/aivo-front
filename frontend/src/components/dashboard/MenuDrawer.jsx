@@ -4,6 +4,8 @@ import {
   Activity, Bell, Cake, Camera, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Download, Dumbbell, FileText, Flag, Info, LifeBuoy, LogOut,
   Phone, Ruler, Scale, ShieldCheck, SlidersHorizontal, Sparkles, Target, Trash2, TrendingDown, User, UserCog, X, Zap,
 } from 'lucide-react'
+import { Chip as ChoiceChip } from '../onboarding/parts'
+import { FOOD_ALLERGIES } from '../../lib/profile'
 
 /* ------------------------------------------------------------------ */
 /* Config                                                              */
@@ -489,8 +491,22 @@ function toForm(profile, name, rec) {
     activity: matchOpt(ACTIVITY, pick(p, ['activity', 'activityLevel'])),
     level: matchOpt(LEVELS, pick(p, ['level', 'experience', 'experienceLevel']) || rec?.level),
     days: Number(pick(p, ['daysPerWeek', 'workoutDays'])) || 0,
+    allergies: Array.isArray(p.allergies)
+      ? p.allergies.filter((allergy) => typeof allergy === 'string' && FOOD_ALLERGIES.includes(allergy))
+      : [],
+    otherAllergies: Array.isArray(p.allergies)
+      ? p.allergies.filter((allergy) => typeof allergy === 'string' && !FOOD_ALLERGIES.includes(allergy)).join('\n')
+      : '',
+    healthConditions: Array.isArray(p.healthConditions)
+      ? p.healthConditions.filter((condition) => typeof condition === 'string')
+      : Array.isArray(p.health_conditions) ? p.health_conditions.filter((condition) => typeof condition === 'string') : [],
   }
 }
+
+const buildAllergies = (f) => [...new Set([
+  ...f.allergies,
+  ...f.otherAllergies.split(/\r?\n/).map((allergy) => allergy.trim()).filter(Boolean),
+])]
 
 const effectiveAge = (f) => (f.birthday ? ageFrom(f.birthday) : f.age ?? NaN)
 
@@ -527,6 +543,8 @@ function buildValues(f, base) {
     [keyOf(['goal', 'fitnessGoal'], 'goal')]: f.goal,
     [keyOf(['level', 'experience', 'experienceLevel'], 'level')]: f.level,
     daysPerWeek: f.days || null,
+    allergies: buildAllergies(f),
+    healthConditions: [...new Set(f.healthConditions.map((condition) => condition.trim()).filter(Boolean))],
   }
 }
 
@@ -557,6 +575,12 @@ function describeChanges(a, b, hUnit, wUnit) {
   add('Experience', a.level, b.level)
   add('Daily activity', a.activity, b.activity)
   add('Training days', a.days ? `${a.days} a week` : '', b.days ? `${b.days} a week` : '')
+  if (buildAllergies(a).join('\n') !== buildAllergies(b).join('\n')) {
+    rows.push(['Food allergies', buildAllergies(a).join(', ') || 'None', buildAllergies(b).join(', ') || 'None'])
+  }
+  if (a.healthConditions.join('\n') !== b.healthConditions.join('\n')) {
+    rows.push(['Health conditions', a.healthConditions.join(', ') || 'None', b.healthConditions.join(', ') || 'None'])
+  }
   return rows
 }
 
@@ -856,7 +880,8 @@ function ProfileView({ initial, base, imperial, accountUser, onUpdateEmail, onSe
   const [emailBusy, setEmailBusy] = useState(false)
   const [emailError, setEmailError] = useState('')
   const [emailNotice, setEmailNotice] = useState('')
-  const [cards, setCards] = useState({ about: false, body: false, goal: false, training: false })   // all start collapsed
+  const [cards, setCards] = useState({ about: false, body: false, goal: false, training: false, allergies: false, health: false })   // all start collapsed
+  const [otherAllergiesOpen, setOtherAllergiesOpen] = useState(Boolean(initial.otherAllergies))
   const [picker, setPicker] = useState(null)   // 'birthday' | 'height' | 'weight' | 'target' | null
   const [hUnit, setHUnit] = useState(imperial ? 'ft' : 'cm')
   const [wUnit, setWUnit] = useState(imperial ? 'lb' : 'kg')
@@ -1110,6 +1135,39 @@ function ProfileView({ initial, base, imperial, accountUser, onUpdateEmail, onSe
         </div>
       </Card>
 
+      <Card id="allergies" icon={ShieldCheck} title="Food allergies" summary={buildAllergies(f).join(', ') || 'None added'} open={cards.allergies} onToggle={() => toggleCard('allergies')}>
+        <p className="mb-2 text-xs text-white/60">Select any that apply. AIVO uses these to avoid unsafe meal suggestions.</p>
+        <div role="group" aria-label="Food allergies" className="flex flex-wrap gap-2">
+          {FOOD_ALLERGIES.map((allergy) => (
+            <ChoiceChip key={allergy} active={f.allergies.includes(allergy)}
+              onClick={() => set('allergies', f.allergies.includes(allergy)
+                ? f.allergies.filter((value) => value !== allergy)
+                : [...f.allergies, allergy])}>
+              {allergy}
+            </ChoiceChip>
+          ))}
+          <ChoiceChip active={Boolean(otherAllergiesOpen || f.otherAllergies.trim())}
+            onClick={() => setOtherAllergiesOpen((open) => !open)}>
+            Other
+          </ChoiceChip>
+        </div>
+        {(otherAllergiesOpen || f.otherAllergies.trim()) && (
+          <Field id="pf-other-allergies" label="Other food allergies" optional hint="Enter one allergy per line.">
+            <textarea id="pf-other-allergies" value={f.otherAllergies}
+              onChange={(e) => set('otherAllergies', e.target.value)}
+              rows={3} className={`${field} min-h-20 resize-y`} />
+          </Field>
+        )}
+      </Card>
+
+      <Card id="health" icon={ShieldCheck} title="Health conditions" summary={f.healthConditions.join(', ') || 'None added'} open={cards.health} onToggle={() => toggleCard('health')}>
+        <Field id="pf-health-conditions" label="Health conditions" optional hint="Enter one condition per line. AIVO uses these to tailor suggestions.">
+          <textarea id="pf-health-conditions" value={f.healthConditions.join('\n')}
+            onChange={(e) => set('healthConditions', e.target.value.split(/\r?\n/))}
+            rows={4} className={`${field} min-h-24 resize-y`} />
+        </Field>
+      </Card>
+
       {(dirty || err) && (
         <div className="sticky bottom-0 -mx-5 -mb-5 space-y-2 border-t border-white/10 bg-[#121212]/95 px-5 py-3 backdrop-blur">
           {err && <Note tone="error">{err}</Note>}
@@ -1141,7 +1199,7 @@ function ProfileView({ initial, base, imperial, accountUser, onUpdateEmail, onSe
  *  profile                                             -> your saved profile (getProfile()), used to fill the profile form
  *  onSaveProfile(values)                               -> save the profile (may throw an Error to show a message). values:
  *                                                         { avatar, name, phone, birthday, age, gender, heightCm, weightKg,
- *                                                           targetWeightKg, activityLevel, goal, level, daysPerWeek } (metric units)
+ *                                                           targetWeightKg, activityLevel, goal, level, daysPerWeek, allergies, healthConditions } (metric units)
  *                                                         Without it the values are kept in localStorage under "aivo:profile".
  */
 export default function MenuDrawer({

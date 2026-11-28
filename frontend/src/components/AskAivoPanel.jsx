@@ -4,6 +4,7 @@ import logo from '../assets/logo.png'
 import useAivoChat from '../lib/useAivoChat'
 import { parseNutritionSuggestion } from '../lib/nutritionSuggestion'
 import WorkoutChatSuggestion, { parseWorkoutSuggestion } from './workouts/WorkoutChatSuggestion'
+import NutritionChatSuggestion from './nutrition/NutritionChatSuggestion'
 
 const ICONS = [Dumbbell, UtensilsCrossed, Zap]
 const Avatar = () => (
@@ -41,7 +42,7 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
       setSaveFeedback('')
       setSaveFeedbackError(false)
       setClosestSuggestion(null)
-    }, 8000)
+    }, 15000)
     return () => window.clearTimeout(timeout)
   }, [saveFeedback, savingSuggestion])
   const saveReply = async (reply, index) => {
@@ -164,6 +165,8 @@ export default function AskAivoPanel({ suggestions = [], context, onClose, wide,
             <div className="min-w-0">
               {page === 'Workout plans'
                 ? <WorkoutChatSuggestion content={m.content} />
+                : page === 'Nutrition'
+                  ? <NutritionChatSuggestion content={m.content} />
                 : <p className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-white/10 px-4 py-3 text-sm">{m.content}</p>}
               {onSaveRecommendation
                 && messages[i - 1]?.role === 'user'

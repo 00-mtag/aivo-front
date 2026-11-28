@@ -47,3 +47,50 @@ export function parseNutritionSuggestion(content) {
 
   return null
 }
+
+export function parseNutritionSuggestionDetails(content) {
+  if (typeof content !== 'string') return []
+
+  const days = []
+  let currentDay = null
+  let currentMeal = null
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine
+      .trim()
+      .replace(/^#{1,6}\s*/, '')
+      .replace(/\*\*/g, '')
+      .trim()
+    if (!line) continue
+
+    const dateHeading = line.match(/^(\d{4}-\d{2}-\d{2})\b/)
+    if (dateHeading) {
+      currentDay = { date: dateHeading[1], meals: [] }
+      days.push(currentDay)
+      currentMeal = null
+      continue
+    }
+
+    const mealHeading = line.match(/^(Breakfast|Lunch|Dinner|Snack)\b\s*:?\s*(.*)$/i)
+    if (mealHeading) {
+      currentDay ??= { date: null, meals: [] }
+      if (!days.includes(currentDay)) days.push(currentDay)
+      const type = MEAL_TYPES.find((mealType) => mealType.toLowerCase() === mealHeading[1].toLowerCase())
+      currentMeal = { type, foods: [], estimate: '' }
+      currentDay.meals.push(currentMeal)
+      if (mealHeading[2].trim()) currentMeal.foods.push(mealHeading[2].trim())
+      continue
+    }
+
+    if (!currentMeal) continue
+    if (/^Estimated nutrition\b/i.test(line)) {
+      currentMeal.estimate = line
+      continue
+    }
+
+    const foodLine = line.match(/^(?:[-*+]\s+|\d+[.)]\s+)(.+)$/)
+    if (foodLine) currentMeal.foods.push(foodLine[1].trim())
+  }
+
+  return days.filter((day) => day.meals.length > 0)
+}

@@ -13,7 +13,7 @@ const KEYS = {
 export const PROGRESS_EVENT = 'aivo:progress-update'
 
 // Same numbers your dashboard shows. Override with setTargets() after onboarding.
-export const DEFAULT_TARGETS = { calories: 1960, protein: 134, water: 2.9, workoutsPerWeek: 3 }
+export const DEFAULT_TARGETS = { calories: 1960, protein: 134, carbohydrates: 237, fat: 55, water: 2.9, workoutsPerWeek: 3 }
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 /* ---------- storage ---------- */
@@ -61,8 +61,8 @@ export const logWorkout = ({ name, minutes = 0, exercises = [], calories = 0, da
   append(KEYS.workoutLog, { id: uid(), date, name, minutes: Number(minutes) || 0, calories: Number(calories) || 0, exercises })
 
 // logMeal({ type: 'Lunch', name: 'Chicken rice bowl', calories: 620, protein: 42 })
-export const logMeal = ({ type = 'Meal', name, calories = 0, protein = 0, date = todayKey() }) =>
-  append(KEYS.mealLog, { id: uid(), date, type, name, calories: Number(calories) || 0, protein: Number(protein) || 0 })
+export const logMeal = ({ type = 'Meal', name, calories = 0, protein = 0, carbs = 0, fat = 0, date = todayKey() }) =>
+  append(KEYS.mealLog, { id: uid(), date, type, name, calories: Number(calories) || 0, protein: Number(protein) || 0, carbs: Number(carbs) || 0, fat: Number(fat) || 0 })
 
 // logWater(0.25)  -> liters
 export const logWater = (liters, date = todayKey()) =>
@@ -180,6 +180,8 @@ export function buildProgress(raw, weekOffset = 0) {
       minutes: sum(workouts, w => w.minutes),
       calories: sum(meals, m => m.calories),
       protein: sum(meals, m => m.protein),
+      carbs: sum(meals, m => Number(m.carbs) || 0),
+      fat: sum(meals, m => Number(m.fat) || 0),
       water: round1(sum(raw.waterLog.filter(w => w.date === key), w => w.liters)),
     }
   })
@@ -189,6 +191,8 @@ export function buildProgress(raw, weekOffset = 0) {
   const waterDays = days.filter(d => d.water > 0)
   const avgCalories = foodDays.length ? Math.round(sum(foodDays, d => d.calories) / foodDays.length) : 0
   const avgProtein = foodDays.length ? Math.round(sum(foodDays, d => d.protein) / foodDays.length) : 0
+  const avgCarbs = foodDays.length ? Math.round(sum(foodDays, d => d.carbs) / foodDays.length) : 0
+  const avgFat = foodDays.length ? Math.round(sum(foodDays, d => d.fat) / foodDays.length) : 0
   const avgWater = waterDays.length ? round1(sum(waterDays, d => d.water) / waterDays.length) : 0
   const todayDay = days.find(d => d.isToday)
 
@@ -239,7 +243,7 @@ export function buildProgress(raw, weekOffset = 0) {
     range: `${short(start)} – ${short(days[6].date)}`,
     today: todayDay || null,
     totals: {
-      workoutsDone, minutes: sum(days, d => d.minutes), avgCalories, avgProtein, avgWater,
+      workoutsDone, minutes: sum(days, d => d.minutes), avgCalories, avgProtein, avgCarbs, avgFat, avgWater,
       foodDays: foodDays.length, mealsLogged: sum(days, d => d.meals.length),
     },
   }

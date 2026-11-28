@@ -105,16 +105,19 @@ export default function WeekDetail({ progress, tab, onTab, onClose, root }) {
           </>)}
 
           {tab === 'food' && (<>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <Mini label="Avg. kcal a day" value={fmt(totals.avgCalories)} />
               <Mini label="Avg. protein" value={`${totals.avgProtein} g`} />
+              <Mini label="Avg. carbs" value={`${totals.avgCarbs} g`} />
+              <Mini label="Avg. fat" value={`${totals.avgFat} g`} />
               <Mini label="Meals logged" value={totals.mealsLogged} />
             </div>
             {foodDays.length === 0
               ? <Empty text="No meals logged this week yet." to={`${root}/nutrition`} cta="Open meal plan" />
               : foodDays.map(d => (
-                <DayBox key={d.key} day={d} right={<span className="text-xs text-white/60">{fmt(d.calories)} kcal, {d.protein} g protein</span>}>
+                <DayBox key={d.key} day={d} right={<span className="text-xs text-white/60">{fmt(d.calories)} kcal</span>}>
                   <ProgressBar value={d.calories} goal={targets.calories} color={d.calories > targets.calories * 1.1 ? 'bg-red-500' : 'bg-gold'} />
+                  <p className="mt-2 text-xs text-white/60">{d.protein} g protein · {d.carbs} g carbs · {d.fat} g fat</p>
                   <ul className="mt-3 divide-y divide-white/5">
                     {d.meals.map(m => (
                       <li key={m.id} className="flex items-center justify-between gap-3 py-2">
