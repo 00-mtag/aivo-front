@@ -259,6 +259,23 @@ export default function Workouts() {
       throw new Error(errorsFrom(error).form, { cause: error })
     }
   }
+  const saveChatSuggestion = async ({ question, suggestion }) => {
+    try {
+      const { data } = await api.post('/ai/suggestions/workout/save', { question, suggestion })
+      const saved = normalizeWorkout(data.workout)
+      cachePut(data.workout)
+      setPlans((current) => [saved, ...current])
+      setOpenId(saved.id)
+      setNewId(saved.id)
+      setSelectedDay(todayName())
+      setStatusFilter('all')
+      setGoalFilter('all')
+      setActionError('')
+      return 'Saved to your workout plans.'
+    } catch (error) {
+      throw new Error(errorsFrom(error).form, { cause: error })
+    }
+  }
   // Save a plan. The server gets the normal exercises; the user's own exercises stay on this device.
   const commitPlan = async (plan) => {
     const before = plans.find((p) => p.id === plan.id)
@@ -522,6 +539,8 @@ export default function Workouts() {
         suggestions={AI_SUGGESTIONS}
         context={{
           page: 'Workout plans',
+          category: 'workout',
+          persistConversations: true,
           data: {
             loading: plansLoading,
             plans: allPlans.map((plan) => ({
@@ -540,6 +559,7 @@ export default function Workouts() {
         }}
         wide={aiWide}
         onToggleWide={() => setAiWide((w) => !w)}
+        onSaveRecommendation={saveChatSuggestion}
       />
     </div>
   )

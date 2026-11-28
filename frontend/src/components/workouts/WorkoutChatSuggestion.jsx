@@ -20,10 +20,10 @@ export function parseWorkoutSuggestion(content) {
   for (const rawLine of content.split(/\r?\n/)) {
     let line = rawLine.trim()
     if (!line) continue
-    line = line.replace(/^\s*(?:#{1,6}\s*|[-*]\s*)+/, '').trim()
-    line = line.replace(/^\*\*(.+)\*\*$/, '$1').trim()
+    line = line.replace(/^\s*#{1,6}\s*/, '').trim()
+    const heading = line.replace(/^\s*(?:[-*]\s*)+/, '').replace(/^\*\*(.+)\*\*$/, '$1').trim()
 
-    const dayMatch = line.match(/^(Monday|Mon|Tuesday|Tue|Wednesday|Wed|Thursday|Thu|Friday|Fri|Saturday|Sat|Sunday|Sun)\b\s*(?:[:\-–—]\s*)?(.*)$/i)
+    const dayMatch = heading.match(/^(Monday|Mon|Tuesday|Tue|Wednesday|Wed|Thursday|Thu|Friday|Fri|Saturday|Sat|Sunday|Sun)\b\s*(?:[:\-–—]\s*)?(.*)$/i)
     if (dayMatch) {
       const day = DAY_ALIASES[dayMatch[1].toLowerCase()]
       const detail = dayMatch[2]?.trim() || ''
@@ -37,7 +37,7 @@ export function parseWorkoutSuggestion(content) {
       continue
     }
 
-    const numberedDayMatch = line.match(/^Day\s*(\d+)\b\s*(?:[:\-–—]\s*)?(.*)$/i)
+    const numberedDayMatch = heading.match(/^Day\s*(\d+)\b\s*(?:[:\-–—]\s*)?(.*)$/i)
     if (numberedDayMatch) {
       const fallbackDays = ['Monday', 'Wednesday', 'Saturday', 'Tuesday', 'Thursday', 'Friday', 'Sunday']
       const day = fallbackDays[(Number(numberedDayMatch[1]) - 1) % fallbackDays.length]

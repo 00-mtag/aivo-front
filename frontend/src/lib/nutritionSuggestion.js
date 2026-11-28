@@ -17,11 +17,13 @@ export function parseNutritionSuggestion(content) {
       continue
     }
 
-    const mealHeading = line.match(/^\s{0,3}(?:#{1,6}\s*)?(?:\*\*)?(Breakfast|Lunch|Dinner|Snack)\b/i)
+    const mealHeading = line
+      .replace(/\*\*/g, '')
+      .match(/^\s{0,3}(?:#{1,6}\s*)?(Breakfast|Lunch|Dinner|Snack)\b\s*:?\s*(.*)$/i)
     if (mealHeading) {
       mealType = MEAL_TYPES.find((type) => type.toLowerCase() === mealHeading[1].toLowerCase())
-      mealContent = false
-      if (date) sections[date][mealType] ??= false
+      mealContent = Boolean(mealHeading[2].trim())
+      if (date) sections[date][mealType] = mealContent
       continue
     }
 
